@@ -4,13 +4,16 @@
 
 # Finch
 
+<p align="center">
+  <a href="https://github.com/brunoliratm/Finch/releases/latest"><img src="https://img.shields.io/github/v/release/brunoliratm/Finch?style=for-the-badge&color=6f52ed" alt="Latest release" /></a>
+  <img src="https://img.shields.io/badge/platform-Android-3ddc84?style=for-the-badge&logo=android&logoColor=white" alt="Android" />
+  <img src="https://img.shields.io/badge/offline-first-6f52ed?style=for-the-badge" alt="Offline first" />
+  <img src="https://img.shields.io/badge/languages-PT%20%7C%20EN-1f6feb?style=for-the-badge" alt="Portuguese and English" />
+</p>
+
 Finch is an offline-first Android personal finance application. It helps users track monthly expenses, manage an investment portfolio, understand financial indicators, and project their balance for the next 12 months.
 
 The application stores financial records only on the user's device. Calculations, projections, and recommendations are produced locally.
-
-## Current scope
-
-Finch is developed exclusively for Android. The interface is bundled inside the native application with Capacitor and does not depend on a hosted website or remote server.
 
 ## Features
 
@@ -30,6 +33,11 @@ Finch is developed exclusively for Android. The interface is bundled inside the 
 - Floating bottom navigation designed for mobile safe areas.
 - Native handling for the Android back button, keyboard, status bar, splash screen, and application locking after leaving the app.
 
+> [!WARNING]
+> **Financial data notes**
+>
+> Stock prices, quantities, purchase prices, and income information are entered manually. Finch does not retrieve live quotations. Projections are estimates based on the information currently stored on the device and must not be treated as financial advice.
+
 ## Privacy and local storage
 
 Finch does not require a financial account, bank connection, market-data provider, external API, or internet permission. Profile information, expenses, assets, and preferences are stored in IndexedDB inside the Android application.
@@ -38,97 +46,28 @@ The PIN is stored as a salted SHA-256 hash and works as a local access lock. It 
 
 Removing the application or clearing its storage removes local records. Android cloud backup is disabled, so users should export backups regularly.
 
+> [!IMPORTANT]
+> **Backup formats**
+>
+> **JSON:** Contains the complete Finch state, including the profile and PIN hash. Importing one replaces the complete local state and requires the imported PIN on the next unlock.
+>
+> **CSV:** Contains expenses and portfolio assets. Importing one replaces those two collections while preserving the current profile, language, theme, and PIN.
+
 ## Technology
 
-- React 19
-- TypeScript
-- Vite
-- Capacitor 8
-- Lucide icons
-- Urbanist, bundled locally
-- IndexedDB
-- Native Android filesystem and sharing plugins
+<p>
+  <img src="https://skill-icons-v2.vercel.app/api/icons?i=react,typescript,vite,capacitor,androidstudio&theme=dark" alt="React, TypeScript, Vite, Capacitor, and Android Studio" />
+</p>
 
-## Local development
+## Get Finch
 
-Requirements:
-
-- Node.js 22.13 or newer
-- npm
-- JDK 21
-- Android SDK Platform 36 and matching build tools
-
-Install dependencies and start the development server:
+Download the latest signed Android APK from the [GitHub Releases page](https://github.com/brunoliratm/Finch/releases/latest). For local development or Android builds, install the project dependencies and use the available npm scripts:
 
 ```bash
 npm install
 npm run dev
-```
-
-Create the bundled application files:
-
-```bash
-npm run build
-```
-
-Run lint checks:
-
-```bash
-npm run lint
-```
-
-## Android build
-
-Build the application files and synchronize the Android project:
-
-```bash
-npm run android:sync
-```
-
-Open the native project in Android Studio:
-
-```bash
-npm run android:open
-```
-
-Build the signed release APK for direct installation after configuring the Android SDK and local signing files:
-
-```bash
 npm run android:release
 ```
-
-The generated APK is written to `android/app/build/outputs/apk/release/app-release.apk`.
-
-Keep `android/app/finch-release.jks` and `android/keystore.properties` in a secure backup. Both files are excluded from Git and are required to sign future updates of the application.
-
-## Main project files
-
-```text
-app/
-  backup.ts       JSON/CSV import, export, and native sharing
-  finance.ts      Financial calculations and recommendations
-  globals.css     Mobile interface and themes
-  main.tsx        Native web view entry point
-  page.tsx        Mobile screens, forms, navigation, localization, and native events
-  storage.ts      IndexedDB persistence
-  types.ts        Shared application state types
-android/           Capacitor Android project
-assets/
-  icon.png         1024×1024 source icon
-  splash.png       2732×2732 source splash screen
-docs/
-  finch-readme.png
-```
-
-## Financial data notes
-
-Stock prices, quantities, purchase prices, and income information are entered manually. Finch does not retrieve live quotations. Projections are estimates based on the information currently stored on the device and must not be treated as financial advice.
-
-## Backup formats
-
-JSON backups contain the complete Finch state, including the profile and PIN hash. Importing one replaces the complete local state and requires the imported PIN on the next unlock.
-
-CSV backups contain expenses and portfolio assets. Importing one replaces those two collections while preserving the current profile, language, theme, and PIN.
 
 ## License
 
