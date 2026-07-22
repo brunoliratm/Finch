@@ -19,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const imageUrl = `${protocol}://${host}/og.png`;
   const title = "Finch — Gestão financeira pessoal";
   const description =
-    "Organize despesas, acompanhe investimentos e planeje seus próximos meses com privacidade local.";
+    "Aplicativo mobile de finanças pessoais com despesas, investimentos, projeções e dados locais.";
 
   return {
     title,

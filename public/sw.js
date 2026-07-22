@@ -1,4 +1,4 @@
-const CACHE_NAME = "finch-app-v2";
+const CACHE_NAME = "finch-app-v3";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

@@ -1,98 +1,103 @@
-# vinext-starter
+<p align="center">
+  <img src="./docs/finch-readme.png" alt="Finch" width="100%" />
+</p>
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+# Finch
 
-## Prerequisites
+Finch is a mobile-first personal finance application designed to work without external financial integrations. It helps users track monthly expenses, manage an investment portfolio, understand financial indicators, and project their balance for the next 12 months.
 
-- Node.js `>=22.13.0`
+The application stores financial records only on the user's device. Calculations, projections, and recommendations are produced locally.
 
-## Quick Start
+## Current scope
+
+Finch is now developed exclusively for mobile interfaces. The current web build is a mobile preview used for development and testing before native packaging.
+
+## Features
+
+- Local onboarding with salary, optional additional income, payday, and PIN.
+- Dashboard with income, expenses, available balance, savings rate, and investment KPIs.
+- Twelve-month balance projection calculated on the device.
+- Rule-based and explainable financial recommendations.
+- Fixed and extra monthly expense tracking.
+- Manual investment portfolio management.
+- Support for dividends, interest on equity, fund distributions, and other income types.
+- Create, edit, mark as paid, and remove expenses.
+- Create, edit, and remove portfolio assets.
+- Portuguese and English interface options.
+- Light and dark themes.
+- Local JSON and CSV exports.
+- Floating bottom navigation designed for mobile safe areas.
+- Offline reopening after the first web load.
+
+## Privacy and local storage
+
+Finch does not require a financial account, bank connection, market-data provider, or external API. Profile information, expenses, assets, and preferences are stored in IndexedDB in the current browser.
+
+The PIN is stored as a salted SHA-256 hash and works as a local access lock. It is not a replacement for full database encryption.
+
+Removing the application or clearing browser storage can remove local records. Users should export backups regularly.
+
+## Technology
+
+- React 19
+- TypeScript
+- vinext and Vite
+- Lucide icons
+- Urbanist, bundled locally
+- IndexedDB
+- Service Worker and Web App Manifest
+- Cloudflare-compatible Sites build
+
+## Local development
+
+Requirements:
+
+- Node.js 22.13 or newer
+- npm
+
+Install dependencies and start the development server:
 
 ```bash
 npm install
 npm run dev
+```
+
+Create a production build:
+
+```bash
 npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+Run lint checks:
 
-## Included Shape
-
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```bash
+npm run lint
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+## Main project files
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+```text
+app/
+  finance.ts      Financial calculations and recommendations
+  globals.css     Mobile interface and themes
+  layout.tsx      Application metadata and social preview
+  page.tsx        Mobile screens, forms, navigation, and localization
+  storage.ts      IndexedDB persistence
+public/
+  manifest.webmanifest
+  sw.js           Offline application cache
+docs/
+  finch-readme.png
+```
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+## Financial data notes
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+Stock prices, quantities, purchase prices, and income information are entered manually. Finch does not retrieve live quotations. Projections are estimates based on the information currently stored on the device and must not be treated as financial advice.
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
+## Planned mobile packaging
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
+The mobile web interface is intended to be packaged for Android and iOS with Capacitor. The local data layer should be reviewed for native storage and encryption before production distribution.
 
-## Useful Commands
+## License
 
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+No license has been defined yet.

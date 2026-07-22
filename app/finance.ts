@@ -105,9 +105,16 @@ export function calculatePortfolioMetrics(assets: Asset[]) {
   };
 }
 
-export function buildProjection(profile: Profile, expenses: Expense[]) {
+export function buildProjection(
+  profile: Profile,
+  expenses: Expense[],
+  language: "pt" | "en" = "pt",
+) {
   const { balance } = calculateExpenseMetrics(profile, expenses);
-  const formatter = new Intl.DateTimeFormat("pt-BR", { month: "short" });
+  const formatter = new Intl.DateTimeFormat(
+    language === "pt" ? "pt-BR" : "en-US",
+    { month: "short" },
+  );
   const now = new Date();
 
   return Array.from({ length: 12 }, (_, index) => {
@@ -129,6 +136,7 @@ export function buildRecommendations(
   profile: Profile,
   expenses: Expense[],
   assets: Asset[],
+  language: "pt" | "en" = "pt",
 ): Recommendation[] {
   const expense = calculateExpenseMetrics(profile, expenses);
   const portfolio = calculatePortfolioMetrics(assets);
@@ -137,42 +145,60 @@ export function buildRecommendations(
   if (expense.commitment > 80) {
     recommendations.push({
       tone: "attention",
-      title: "Orçamento no limite",
-      description: `${expense.commitment.toFixed(0)}% da sua renda já está comprometida neste mês.`,
+      title: language === "pt" ? "Orçamento no limite" : "Budget at its limit",
+      description:
+        language === "pt"
+          ? `${expense.commitment.toFixed(0)}% da sua renda já está comprometida neste mês.`
+          : `${expense.commitment.toFixed(0)}% of your income is already committed this month.`,
     });
   } else if (expense.savingsRate >= 20) {
     recommendations.push({
       tone: "positive",
-      title: "Boa margem mensal",
-      description: `Você preserva ${expense.savingsRate.toFixed(0)}% da renda após as despesas registradas.`,
+      title: language === "pt" ? "Boa margem mensal" : "Healthy monthly margin",
+      description:
+        language === "pt"
+          ? `Você preserva ${expense.savingsRate.toFixed(0)}% da renda após as despesas registradas.`
+          : `You keep ${expense.savingsRate.toFixed(0)}% of your income after registered expenses.`,
     });
   } else {
     recommendations.push({
       tone: "neutral",
-      title: "Meta de reserva",
-      description: "Busque manter ao menos 20% da renda livre para metas e imprevistos.",
+      title: language === "pt" ? "Meta de reserva" : "Savings goal",
+      description:
+        language === "pt"
+          ? "Busque manter ao menos 20% da renda livre para metas e imprevistos."
+          : "Aim to keep at least 20% of your income available for goals and emergencies.",
     });
   }
 
   if (expense.income > 0 && expense.fixed / expense.income > 0.5) {
     recommendations.push({
       tone: "attention",
-      title: "Custos fixos elevados",
-      description: "Seus gastos fixos superam 50% da renda mensal.",
+      title: language === "pt" ? "Custos fixos elevados" : "High fixed costs",
+      description:
+        language === "pt"
+          ? "Seus gastos fixos superam 50% da renda mensal."
+          : "Your fixed expenses exceed 50% of your monthly income.",
     });
   }
 
   if (assets.length > 1 && portfolio.concentration > 50) {
     recommendations.push({
       tone: "attention",
-      title: "Carteira concentrada",
-      description: `${portfolio.concentration.toFixed(0)}% do patrimônio está em uma única posição.`,
+      title: language === "pt" ? "Carteira concentrada" : "Concentrated portfolio",
+      description:
+        language === "pt"
+          ? `${portfolio.concentration.toFixed(0)}% do patrimônio está em uma única posição.`
+          : `${portfolio.concentration.toFixed(0)}% of your portfolio is held in a single position.`,
     });
   } else if (assets.length > 0) {
     recommendations.push({
       tone: "positive",
-      title: "Renda projetada",
-      description: `Os rendimentos cadastrados projetam ${formatBRL(portfolio.annualIncome)} em 12 meses.`,
+      title: language === "pt" ? "Renda projetada" : "Projected income",
+      description:
+        language === "pt"
+          ? `Os rendimentos cadastrados projetam ${formatBRL(portfolio.annualIncome)} em 12 meses.`
+          : `Registered income projects ${formatBRL(portfolio.annualIncome)} over 12 months.`,
     });
   }
 
@@ -184,4 +210,3 @@ export const formatBRL = (value: number) =>
     style: "currency",
     currency: "BRL",
   }).format(value);
-
