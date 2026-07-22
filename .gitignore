@@ -12,17 +12,21 @@
 
 # testing
 /coverage
-
-# next.js
-/.next/
-/.vinext/
-/out/
+/test-results
+/playwright-report
 
 # misc
 .DS_Store
+Thumbs.db
+Desktop.ini
 *.pem
+*.swp
+*~
+.idea/
+.vscode/
 
 # debug
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -30,14 +34,30 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-
-# vercel
-.vercel
+!.env.example
 
 # typescript
-next-env.d.ts
 *.tsbuildinfo
+
+# generated web files and caches
 /dist/
-/.wrangler/
-/outputs/
-/work/
+/.cache/
+/.vite/
+/.eslintcache
+
+# Android build files and local configuration
+/android/.gradle/
+/android/**/build/
+/android/local.properties
+/android/keystore.properties
+/android/capacitor-cordova-android-plugins/
+/android/app/release/
+/android/app/src/main/assets/public/
+/android/app/src/main/assets/capacitor.config.json
+/android/app/src/main/assets/capacitor.plugins.json
+/android/app/src/main/res/xml/config.xml
+*.apk
+*.aab
+*.aar
+*.jks
+*.keystore

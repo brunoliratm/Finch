@@ -1,5 +1,7 @@
-"use client";
-
+import { App as CapacitorApp } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
+import { Keyboard, KeyboardResize } from "@capacitor/keyboard";
+import { StatusBar, Style as StatusBarStyle } from "@capacitor/status-bar";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -28,11 +30,15 @@ import {
   TrendingDown,
   TrendingUp,
   Trash2,
+  Upload,
   UserRound,
   WalletCards,
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
+import finchIcon from "../assets/icon.png";
+import finchSplash from "../assets/splash.png";
+import { exportBackup, importBackup } from "./backup";
 import {
   Asset,
   buildProjection,
@@ -45,54 +51,48 @@ import {
   Profile,
 } from "./finance";
 import { loadLocalState, saveLocalState } from "./storage";
+import type { FinchState, Language } from "./types";
 
-type Language = "pt" | "en";
 type Tab = "dashboard" | "portfolio" | "expenses" | "profile";
 
 type EditorModal =
   | { type: "expense"; item?: Expense }
   | { type: "asset"; item?: Asset };
 
-type FinchState = {
-  schemaVersion: 1;
-  profile: Profile;
-  expenses: Expense[];
-  assets: Asset[];
-  theme: "light" | "dark";
-  language: Language;
-};
-
 const pt = {
   nav: { home: "Início", portfolio: "Carteira", expenses: "Despesas", profile: "Perfil", label: "Navegação principal" },
   common: { optional: "Opcional", cancel: "Cancelar", close: "Fechar", edit: "Editar", remove: "Remover", save: "Salvar alterações", fixed: "Fixo", extra: "Extra", paid: "Pago", pending: "Pendente", noDueDate: "Sem vencimento", day: "Dia", perMonth: "por mês" },
-  onboarding: { tagline: "Seu dinheiro, mais claro", firstAccess: "Primeiro acesso", title: "Vamos preparar seu espaço", intro: "Somente o essencial é obrigatório. Você poderá alterar tudo depois.", nameQuestion: "Como devemos chamar você?", namePlaceholder: "Seu nome", salary: "Salário mensal", extraIncome: "Renda extra", payday: "Dia do pagamento", paydayPlaceholder: "Ex.: 5", continue: "Continuar", back: "Voltar", protection: "Proteção local", pinTitle: "Crie seu PIN", pinIntro: "Ele será solicitado quando você abrir novamente o Finch.", pin: "PIN", pinPlaceholder: "4 a 6 dígitos", confirmPin: "Confirme o PIN", confirmPlaceholder: "Repita seu PIN", demoTitle: "Adicionar dados de demonstração", demoDescription: "Ideal para conhecer os gráficos e indicadores.", enter: "Entrar no Finch", pinLengthError: "Crie um PIN numérico de 4 a 6 dígitos.", pinMatchError: "Os PINs informados não são iguais.", privacy: "Seus dados ficam neste dispositivo" },
+  onboarding: { tagline: "Seu dinheiro, mais claro", firstAccess: "Primeiro acesso", title: "Vamos preparar seu espaço", intro: "Somente o essencial é obrigatório. Você poderá alterar tudo depois.", nameQuestion: "Como devemos chamar você?", namePlaceholder: "Seu nome", salary: "Salário mensal", extraIncome: "Renda extra", payday: "Dia do pagamento", paydayPlaceholder: "Ex.: 5", continue: "Continuar", back: "Voltar", protection: "Proteção local", pinTitle: "Crie seu PIN", pinIntro: "Ele será solicitado quando você abrir novamente o Finch.", pin: "PIN", pinPlaceholder: "4 a 6 dígitos", confirmPin: "Confirme o PIN", confirmPlaceholder: "Repita seu PIN", enter: "Entrar no Finch", pinLengthError: "Crie um PIN numérico de 4 a 6 dígitos.", pinMatchError: "Os PINs informados não são iguais.", privacy: "Seus dados ficam neste dispositivo" },
   lock: { welcome: "Bem-vindo de volta", hello: "Olá", description: "Digite seu PIN para acessar seus dados financeiros.", incorrect: "PIN incorreto. Tente novamente.", unlock: "Desbloquear", protected: "Proteção local ativa" },
   dashboard: { greeting: "Olá", description: "Seu panorama financeiro deste mês.", newExpense: "Nova despesa", balance: "Saldo disponível", showValues: "Mostrar valores", hideValues: "Ocultar valores", freeIncome: "da renda permanece livre", income: "Receitas", expenses: "Despesas", invested: "Patrimônio investido", savingsRate: "Taxa de economia", suggestedGoal: "Meta sugerida: 20%", investmentIncome: "Renda de investimentos", monthlyAverage: "Média mensal projetada", distribution: "Distribuição", categories: "Despesas por categoria", details: "Ver detalhes", noExpenses: "Nenhuma despesa", noExpensesDescription: "Adicione despesas para visualizar sua distribuição.", forecast: "Previsão", nextMonths: "Próximos 12 meses", localEstimate: "Estimativa local", estimatedBalance: "Saldo acumulado estimado", insights: "Finch insights", recommendations: "Recomendações para você" },
   portfolio: { eyebrow: "Seus investimentos", title: "Carteira", description: "Acompanhe posições e rendimentos informados manualmente.", add: "Adicionar ativo", currentValue: "Valor atual", invested: "Total investido", result: "Resultado", annualIncome: "Renda anual", registeredProjection: "projeção cadastrada", positions: "Posições", registeredAssets: "Ativos cadastrados", manualUpdate: "Atualização manual", quantity: "Quantidade", currentPrice: "Preço atual", position: "Posição", emptyTitle: "Sua carteira começa aqui", emptyDescription: "Adicione o primeiro ativo para calcular sua rentabilidade.", removeConfirm: "Remover {ticker} da carteira?" },
   expenses: { eyebrow: "Controle mensal", title: "Despesas", description: "Acompanhe compromissos fixos e gastos extras do mês.", add: "Nova despesa", monthTotal: "Total do mês", fixed: "Gastos fixos", ofIncome: "da renda", extras: "Gastos extras", commitment: "Comprometimento", withinLimit: "Dentro do limite", review: "Revisar despesas", thisMonth: "Neste mês", bills: "Contas e gastos", paidCount: "pagos", markPending: "Marcar como pendente", markPaid: "Marcar como pago", emptyTitle: "Nenhuma despesa registrada", emptyDescription: "Adicione seus gastos fixos e extras deste mês.", budget: "Orçamento sugerido", basedOnIncome: "Baseado na sua renda", budgetDescription: "Uma referência simples para distribuir {income}, sem transformar recomendações em regras rígidas.", essentials: "Essenciais", lifestyle: "Estilo de vida", reserve: "Reserva e metas", removeConfirm: "Remover a despesa “{name}”?" },
-  profile: { eyebrow: "Preferências locais", title: "Seu perfil", description: "Atualize renda, idioma, segurança, aparência e backups.", language: "Idioma", languageTitle: "Idioma do aplicativo", languageDescription: "Alterne toda a interface do Finch.", portuguese: "Português", english: "English", financialData: "Dados financeiros", personalInfo: "Informações pessoais", name: "Nome", salary: "Salário mensal", extraIncome: "Renda extra", payday: "Dia do pagamento", security: "Segurança", changePin: "Alterar PIN", currentPin: "PIN atual", newPin: "Novo PIN", confirm: "Confirme", updatePin: "Atualizar PIN", wrongPin: "O PIN atual está incorreto.", invalidPin: "O novo PIN deve ter de 4 a 6 dígitos.", pinMismatch: "A confirmação do novo PIN não corresponde.", appearance: "Aparência", theme: "Tema do Finch", themeDescription: "Escolha o tema mais confortável para acompanhar suas finanças.", light: "Claro", dark: "Escuro", backup: "Backup local", export: "Exportar seus dados", exportDescription: "Baixe uma cópia para guardar ou analisar fora do Finch.", exportJson: "Exportar JSON", exportCsv: "Exportar CSV", lock: "Bloquear aplicativo agora" },
+  profile: { eyebrow: "Preferências locais", title: "Seu perfil", description: "Atualize renda, idioma, segurança, aparência e backups.", language: "Idioma", languageTitle: "Idioma do aplicativo", languageDescription: "Alterne toda a interface do Finch.", portuguese: "Português", english: "English", financialData: "Dados financeiros", personalInfo: "Informações pessoais", name: "Nome", salary: "Salário mensal", extraIncome: "Renda extra", payday: "Dia do pagamento", security: "Segurança", changePin: "Alterar PIN", currentPin: "PIN atual", newPin: "Novo PIN", confirm: "Confirme", updatePin: "Atualizar PIN", wrongPin: "O PIN atual está incorreto.", invalidPin: "O novo PIN deve ter de 4 a 6 dígitos.", pinMismatch: "A confirmação do novo PIN não corresponde.", appearance: "Aparência", theme: "Tema do Finch", themeDescription: "Escolha o tema mais confortável para acompanhar suas finanças.", light: "Claro", dark: "Escuro", backup: "Backup local", export: "Exporte ou importe", exportDescription: "Crie uma cópia ou restaure os dados do Finch neste dispositivo.", exportJson: "Exportar JSON", exportCsv: "Exportar CSV", importJson: "Importar JSON", importCsv: "Importar CSV", importConfirm: "A importação substituirá os dados correspondentes. Continuar?", importError: "Não foi possível importar este arquivo.", lock: "Bloquear aplicativo agora" },
   expenseForm: { eyebrow: "Cadastro local", newTitle: "Nova despesa", editTitle: "Editar despesa", description: "Registre um compromisso fixo ou gasto extra.", name: "Descrição", namePlaceholder: "Ex.: Conta de energia", category: "Categoria", amount: "Valor", type: "Tipo", fixed: "Gasto fixo", extra: "Gasto extra", dueDay: "Dia do vencimento", paid: "Marcar como pago", paidDescription: "Você poderá alterar depois.", add: "Adicionar despesa" },
   assetForm: { eyebrow: "Cadastro local", newTitle: "Novo ativo", editTitle: "Editar ativo", description: "Informe os dados da sua posição e dos rendimentos.", ticker: "Código do ativo", tickerPlaceholder: "Ex.: PETR4", name: "Nome", namePlaceholder: "Empresa ou fundo", category: "Categoria", quantity: "Quantidade", purchasePrice: "Preço de compra", currentPrice: "Preço atual", incomeType: "Forma de lucro", incomePerShare: "Valor por ação/cota", frequency: "Periodicidade", add: "Adicionar ativo" },
   options: { housing: "Moradia", home: "Casa", food: "Alimentação", health: "Saúde", leisure: "Lazer", transport: "Transporte", others: "Outros", stocks: "Ações", fixedIncome: "Renda fixa", other: "Outro", dividends: "Dividendos", interest: "Juros sobre capital", distributions: "Rendimentos", monthly: "Mensal", bimonthly: "Bimestral", quarterly: "Trimestral", semiannual: "Semestral", annual: "Anual", eventual: "Eventual" },
-  toast: { expenseAdded: "Despesa adicionada", expenseUpdated: "Despesa atualizada", expenseRemoved: "Despesa removida", assetAdded: "Ativo adicionado", assetUpdated: "Ativo atualizado", assetRemoved: "Ativo removido", profileUpdated: "Perfil atualizado", pinUpdated: "PIN alterado", languageUpdated: "Idioma atualizado" },
+  toast: { expenseAdded: "Despesa adicionada", expenseUpdated: "Despesa atualizada", expenseRemoved: "Despesa removida", assetAdded: "Ativo adicionado", assetUpdated: "Ativo atualizado", assetRemoved: "Ativo removido", profileUpdated: "Perfil atualizado", pinUpdated: "PIN alterado", languageUpdated: "Idioma atualizado", backupImported: "Backup importado" },
 };
 
 const en = {
   nav: { home: "Home", portfolio: "Portfolio", expenses: "Expenses", profile: "Profile", label: "Main navigation" },
   common: { optional: "Optional", cancel: "Cancel", close: "Close", edit: "Edit", remove: "Remove", save: "Save changes", fixed: "Fixed", extra: "Extra", paid: "Paid", pending: "Pending", noDueDate: "No due date", day: "Day", perMonth: "per month" },
-  onboarding: { tagline: "Your money, made clearer", firstAccess: "First access", title: "Let's set up your space", intro: "Only essential information is required. You can change everything later.", nameQuestion: "What should we call you?", namePlaceholder: "Your name", salary: "Monthly salary", extraIncome: "Additional income", payday: "Payday", paydayPlaceholder: "E.g. 5", continue: "Continue", back: "Back", protection: "Local protection", pinTitle: "Create your PIN", pinIntro: "It will be requested when you open Finch again.", pin: "PIN", pinPlaceholder: "4 to 6 digits", confirmPin: "Confirm PIN", confirmPlaceholder: "Repeat your PIN", demoTitle: "Add demonstration data", demoDescription: "Ideal for exploring charts and indicators.", enter: "Enter Finch", pinLengthError: "Create a numeric PIN with 4 to 6 digits.", pinMatchError: "The PIN values do not match.", privacy: "Your data stays on this device" },
+  onboarding: { tagline: "Your money, made clearer", firstAccess: "First access", title: "Let's set up your space", intro: "Only essential information is required. You can change everything later.", nameQuestion: "What should we call you?", namePlaceholder: "Your name", salary: "Monthly salary", extraIncome: "Additional income", payday: "Payday", paydayPlaceholder: "E.g. 5", continue: "Continue", back: "Back", protection: "Local protection", pinTitle: "Create your PIN", pinIntro: "It will be requested when you open Finch again.", pin: "PIN", pinPlaceholder: "4 to 6 digits", confirmPin: "Confirm PIN", confirmPlaceholder: "Repeat your PIN", enter: "Enter Finch", pinLengthError: "Create a numeric PIN with 4 to 6 digits.", pinMatchError: "The PIN values do not match.", privacy: "Your data stays on this device" },
   lock: { welcome: "Welcome back", hello: "Hello", description: "Enter your PIN to access your financial data.", incorrect: "Incorrect PIN. Try again.", unlock: "Unlock", protected: "Local protection active" },
   dashboard: { greeting: "Hello", description: "Your financial overview for this month.", newExpense: "New expense", balance: "Available balance", showValues: "Show values", hideValues: "Hide values", freeIncome: "of your income remains available", income: "Income", expenses: "Expenses", invested: "Invested assets", savingsRate: "Savings rate", suggestedGoal: "Suggested goal: 20%", investmentIncome: "Investment income", monthlyAverage: "Projected monthly average", distribution: "Distribution", categories: "Expenses by category", details: "View details", noExpenses: "No expenses", noExpensesDescription: "Add expenses to see their distribution.", forecast: "Forecast", nextMonths: "Next 12 months", localEstimate: "Local estimate", estimatedBalance: "Estimated accumulated balance", insights: "Finch insights", recommendations: "Recommendations for you" },
   portfolio: { eyebrow: "Your investments", title: "Portfolio", description: "Track positions and income entered manually.", add: "Add asset", currentValue: "Current value", invested: "Total invested", result: "Result", annualIncome: "Annual income", registeredProjection: "registered projection", positions: "Positions", registeredAssets: "Registered assets", manualUpdate: "Manual update", quantity: "Quantity", currentPrice: "Current price", position: "Position", emptyTitle: "Your portfolio starts here", emptyDescription: "Add your first asset to calculate profitability.", removeConfirm: "Remove {ticker} from your portfolio?" },
   expenses: { eyebrow: "Monthly control", title: "Expenses", description: "Track fixed commitments and extra monthly spending.", add: "New expense", monthTotal: "Month total", fixed: "Fixed expenses", ofIncome: "of income", extras: "Extra expenses", commitment: "Income committed", withinLimit: "Within the limit", review: "Review expenses", thisMonth: "This month", bills: "Bills and spending", paidCount: "paid", markPending: "Mark as pending", markPaid: "Mark as paid", emptyTitle: "No expenses registered", emptyDescription: "Add this month's fixed and extra expenses.", budget: "Suggested budget", basedOnIncome: "Based on your income", budgetDescription: "A simple reference for distributing {income} without turning recommendations into strict rules.", essentials: "Essentials", lifestyle: "Lifestyle", reserve: "Savings and goals", removeConfirm: "Remove the expense “{name}”?" },
-  profile: { eyebrow: "Local preferences", title: "Your profile", description: "Update income, language, security, appearance, and backups.", language: "Language", languageTitle: "Application language", languageDescription: "Switch the entire Finch interface.", portuguese: "Português", english: "English", financialData: "Financial data", personalInfo: "Personal information", name: "Name", salary: "Monthly salary", extraIncome: "Additional income", payday: "Payday", security: "Security", changePin: "Change PIN", currentPin: "Current PIN", newPin: "New PIN", confirm: "Confirm", updatePin: "Update PIN", wrongPin: "The current PIN is incorrect.", invalidPin: "The new PIN must contain 4 to 6 digits.", pinMismatch: "The new PIN confirmation does not match.", appearance: "Appearance", theme: "Finch theme", themeDescription: "Choose the most comfortable theme for tracking your finances.", light: "Light", dark: "Dark", backup: "Local backup", export: "Export your data", exportDescription: "Download a copy for safekeeping or analysis outside Finch.", exportJson: "Export JSON", exportCsv: "Export CSV", lock: "Lock application now" },
+  profile: { eyebrow: "Local preferences", title: "Your profile", description: "Update income, language, security, appearance, and backups.", language: "Language", languageTitle: "Application language", languageDescription: "Switch the entire Finch interface.", portuguese: "Português", english: "English", financialData: "Financial data", personalInfo: "Personal information", name: "Name", salary: "Monthly salary", extraIncome: "Additional income", payday: "Payday", security: "Security", changePin: "Change PIN", currentPin: "Current PIN", newPin: "New PIN", confirm: "Confirm", updatePin: "Update PIN", wrongPin: "The current PIN is incorrect.", invalidPin: "The new PIN must contain 4 to 6 digits.", pinMismatch: "The new PIN confirmation does not match.", appearance: "Appearance", theme: "Finch theme", themeDescription: "Choose the most comfortable theme for tracking your finances.", light: "Light", dark: "Dark", backup: "Local backup", export: "Export or import", exportDescription: "Create a copy or restore Finch data on this device.", exportJson: "Export JSON", exportCsv: "Export CSV", importJson: "Import JSON", importCsv: "Import CSV", importConfirm: "Importing will replace the corresponding data. Continue?", importError: "This file could not be imported.", lock: "Lock application now" },
   expenseForm: { eyebrow: "Local record", newTitle: "New expense", editTitle: "Edit expense", description: "Register a fixed commitment or extra expense.", name: "Description", namePlaceholder: "E.g. Electricity bill", category: "Category", amount: "Amount", type: "Type", fixed: "Fixed expense", extra: "Extra expense", dueDay: "Due day", paid: "Mark as paid", paidDescription: "You can change this later.", add: "Add expense" },
   assetForm: { eyebrow: "Local record", newTitle: "New asset", editTitle: "Edit asset", description: "Enter the details of your position and investment income.", ticker: "Asset ticker", tickerPlaceholder: "E.g. PETR4", name: "Name", namePlaceholder: "Company or fund", category: "Category", quantity: "Quantity", purchasePrice: "Purchase price", currentPrice: "Current price", incomeType: "Income type", incomePerShare: "Amount per share", frequency: "Frequency", add: "Add asset" },
   options: { housing: "Housing", home: "Home", food: "Food", health: "Health", leisure: "Leisure", transport: "Transport", others: "Others", stocks: "Stocks", fixedIncome: "Fixed income", other: "Other", dividends: "Dividends", interest: "Interest on equity", distributions: "Distributions", monthly: "Monthly", bimonthly: "Every two months", quarterly: "Quarterly", semiannual: "Semiannual", annual: "Annual", eventual: "Occasional" },
-  toast: { expenseAdded: "Expense added", expenseUpdated: "Expense updated", expenseRemoved: "Expense removed", assetAdded: "Asset added", assetUpdated: "Asset updated", assetRemoved: "Asset removed", profileUpdated: "Profile updated", pinUpdated: "PIN updated", languageUpdated: "Language updated" },
+  toast: { expenseAdded: "Expense added", expenseUpdated: "Expense updated", expenseRemoved: "Expense removed", assetAdded: "Asset added", assetUpdated: "Asset updated", assetRemoved: "Asset removed", profileUpdated: "Profile updated", pinUpdated: "PIN updated", languageUpdated: "Language updated", backupImported: "Backup imported" },
 } satisfies typeof pt;
 
 const copy = { pt, en };
+
+const legacyDemoExpenseIds = ["exp-1", "exp-2", "exp-3", "exp-4", "exp-5", "exp-6"];
+const legacyDemoAssetIds = ["asset-1", "asset-2", "asset-3"];
 
 const expenseColors: Record<string, string> = {
   Moradia: "#7357e8",
@@ -128,21 +128,6 @@ const optionLabel = (language: Language, value: string) => {
   return key ? copy[language].options[key] : value;
 };
 
-const createDemoExpenses = (language: Language): Expense[] => [
-  { id: "exp-1", name: language === "pt" ? "Aluguel" : "Rent", category: "Moradia", amount: 1650, kind: "fixed", dueDay: 8, paid: true },
-  { id: "exp-2", name: language === "pt" ? "Energia" : "Electricity", category: "Casa", amount: 238.4, kind: "fixed", dueDay: 12, paid: true },
-  { id: "exp-3", name: "Internet", category: "Casa", amount: 119.9, kind: "fixed", dueDay: 15, paid: false },
-  { id: "exp-4", name: language === "pt" ? "Supermercado" : "Groceries", category: "Alimentação", amount: 742.35, kind: "extra", paid: true },
-  { id: "exp-5", name: language === "pt" ? "Academia" : "Gym", category: "Saúde", amount: 109.9, kind: "fixed", dueDay: 20, paid: false },
-  { id: "exp-6", name: language === "pt" ? "Cinema" : "Movies", category: "Lazer", amount: 84, kind: "extra", paid: true },
-];
-
-const demoAssets: Asset[] = [
-  { id: "asset-1", ticker: "PETR4", name: "Petrobras", category: "Ações", quantity: 25, purchasePrice: 34.2, currentPrice: 37.82, incomeType: "Dividendos", incomePerShare: 0.82, frequency: "quarterly" },
-  { id: "asset-2", ticker: "MXRF11", name: "Maxi Renda", category: "FII", quantity: 70, purchasePrice: 10.18, currentPrice: 10.42, incomeType: "Rendimentos", incomePerShare: 0.1, frequency: "monthly" },
-  { id: "asset-3", ticker: "BOVA11", name: "ETF Ibovespa", category: "ETF", quantity: 8, purchasePrice: 119.4, currentPrice: 124.9, incomeType: "Outro", incomePerShare: 0, frequency: "eventual" },
-];
-
 async function hashPin(pin: string, salt: string) {
   const bytes = new TextEncoder().encode(`${salt}:${pin}`);
   const hash = await crypto.subtle.digest("SHA-256", bytes);
@@ -170,14 +155,25 @@ export default function HomePage() {
   const [hideValues, setHideValues] = useState(false);
   const [modal, setModal] = useState<EditorModal | null>(null);
   const [toast, setToast] = useState("");
+  const [splashComplete, setSplashComplete] = useState(false);
+
+  const lock = () => {
+    sessionStorage.removeItem("finch-unlocked");
+    setUnlocked(false);
+  };
 
   useEffect(() => {
     loadLocalState<FinchState>()
       .then((saved) => {
         if (saved) {
-          const migrated = { ...saved, language: saved.language ?? "pt" as Language };
+          const migrated = {
+            ...saved,
+            language: saved.language ?? "pt" as Language,
+            expenses: saved.expenses.filter((expense) => !legacyDemoExpenseIds.includes(expense.id)),
+            assets: saved.assets.filter((asset) => !legacyDemoAssetIds.includes(asset.id)),
+          };
           setData(migrated);
-          if (!saved.language) void saveLocalState(migrated);
+          if (!saved.language || migrated.expenses.length !== saved.expenses.length || migrated.assets.length !== saved.assets.length) void saveLocalState(migrated);
         }
         setUnlocked(sessionStorage.getItem("finch-unlocked") === "true");
       })
@@ -185,13 +181,42 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js");
+    const timer = window.setTimeout(() => setSplashComplete(true), 1450);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = data?.theme ?? "light";
     document.documentElement.lang = data?.language === "en" ? "en" : "pt-BR";
   }, [data?.theme, data?.language]);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    void StatusBar.setStyle({ style: data?.theme === "dark" ? StatusBarStyle.Light : StatusBarStyle.Dark });
+    void StatusBar.setBackgroundColor({ color: data?.theme === "dark" ? "#0d0d0f" : "#eeedf4" });
+  }, [data?.theme]);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    void Keyboard.setResizeMode({ mode: KeyboardResize.Body });
+  }, []);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    const listeners = Promise.all([
+      CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+        if (!isActive && unlocked) lock();
+      }),
+      CapacitorApp.addListener("backButton", () => {
+        if (modal) setModal(null);
+        else if (activeTab !== "dashboard") setActiveTab("dashboard");
+        else void CapacitorApp.exitApp();
+      }),
+    ]);
+    return () => {
+      void listeners.then((handles) => handles.forEach((handle) => void handle.remove()));
+    };
+  }, [activeTab, modal, unlocked]);
 
   useEffect(() => {
     if (!toast) return;
@@ -201,11 +226,11 @@ export default function HomePage() {
 
   const commit = (next: FinchState, message?: string) => {
     setData(next);
-    void saveLocalState(next);
     if (message) setToast(message);
+    return saveLocalState(next);
   };
 
-  if (!hydrated) return <LoadingScreen />;
+  if (!hydrated || !splashComplete) return <LoadingScreen />;
   if (!data) return <Onboarding onComplete={(next) => { setData(next); setUnlocked(true); sessionStorage.setItem("finch-unlocked", "true"); }} />;
   if (!unlocked) return <LockScreen profile={data.profile} language={data.language} onUnlock={() => { setUnlocked(true); sessionStorage.setItem("finch-unlocked", "true"); }} />;
 
@@ -219,11 +244,6 @@ export default function HomePage() {
     { id: "expenses" as Tab, label: c.nav.expenses, icon: ReceiptText },
     { id: "profile" as Tab, label: c.nav.profile, icon: UserRound },
   ];
-
-  const lock = () => {
-    sessionStorage.removeItem("finch-unlocked");
-    setUnlocked(false);
-  };
 
   return (
     <div className="app-shell">
@@ -280,18 +300,22 @@ export default function HomePage() {
 
 function Header({ language, onHome, onLock }: { language: Language; onHome: () => void; onLock: () => void }) {
   const c = copy[language];
-  return <header className="topbar"><button className="brand" onClick={onHome} aria-label={c.nav.home}><span className="brand-mark"><Sparkles size={18} /></span><span>Finch</span></button><button className="avatar-button" onClick={onLock} aria-label={c.profile.lock}><LockKeyhole size={17} /></button></header>;
+  return <header className="topbar"><button className="brand" onClick={onHome} aria-label={c.nav.home}><BrandMark /><span>Finch</span></button><button className="avatar-button" onClick={onLock} aria-label={c.profile.lock}><LockKeyhole size={17} /></button></header>;
+}
+
+function BrandMark({ large = false }: { large?: boolean }) {
+  return <span className={`brand-mark app-icon ${large ? "large" : ""}`}><img src={finchIcon} alt="" /></span>;
 }
 
 function LoadingScreen() {
-  return <div className="loading-screen"><span className="brand-mark large"><Sparkles size={26} /></span><strong>Finch</strong><div className="loading-line" /></div>;
+  return <div className="loading-screen"><img className="splash-image" src={finchSplash} alt="Finch" /></div>;
 }
 
 function Onboarding({ onComplete }: { onComplete: (state: FinchState) => void }) {
   const [language, setLanguage] = useState<Language>("pt");
   const [step, setStep] = useState(1);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({ name: "", salary: "", extraIncome: "", payday: "", pin: "", confirmPin: "", demo: true });
+  const [form, setForm] = useState({ name: "", salary: "", extraIncome: "", payday: "", pin: "", confirmPin: "" });
   const c = copy[language];
 
   const finish = async (event: FormEvent) => {
@@ -300,7 +324,7 @@ function Onboarding({ onComplete }: { onComplete: (state: FinchState) => void })
     if (form.pin !== form.confirmPin) return setError(c.onboarding.pinMatchError);
     const pinSalt = createSalt();
     const profile: Profile = { name: form.name.trim(), salary: Number(form.salary), extraIncome: Number(form.extraIncome) || 0, payday: form.payday ? Number(form.payday) : undefined, pinSalt, pinHash: await hashPin(form.pin, pinSalt) };
-    const next: FinchState = { schemaVersion: 1, profile, expenses: form.demo ? createDemoExpenses(language) : [], assets: form.demo ? demoAssets : [], theme: "light", language };
+    const next: FinchState = { schemaVersion: 1, profile, expenses: [], assets: [], theme: "light", language };
     await saveLocalState(next);
     onComplete(next);
   };
@@ -308,7 +332,7 @@ function Onboarding({ onComplete }: { onComplete: (state: FinchState) => void })
   return (
     <div className="auth-layout">
       <section className="auth-panel">
-        <div className="auth-top"><div className="mobile-auth-brand"><span className="brand-mark"><Sparkles size={17} /></span><strong>Finch</strong></div><LanguageSwitch language={language} onChange={setLanguage} compact /></div>
+        <div className="auth-top"><div className="mobile-auth-brand"><BrandMark /><strong>Finch</strong></div><LanguageSwitch language={language} onChange={setLanguage} compact /></div>
         <div className="onboarding-intro"><span className="eyebrow">{c.onboarding.tagline}</span><div className="privacy-pill"><ShieldCheck size={16} /> {c.onboarding.privacy}</div></div>
         <div className="step-indicator"><span className={step >= 1 ? "active" : ""} /><span className={step >= 2 ? "active" : ""} /></div>
         {step === 1 ? (
@@ -325,7 +349,6 @@ function Onboarding({ onComplete }: { onComplete: (state: FinchState) => void })
             <button type="button" className="back-link" onClick={() => setStep(1)}>← {c.onboarding.back}</button><span className="eyebrow">{c.onboarding.protection}</span><h1>{c.onboarding.pinTitle}</h1><p>{c.onboarding.pinIntro}</p>
             <label>{c.onboarding.pin}<input required inputMode="numeric" maxLength={6} type="password" value={form.pin} onChange={(event) => setForm({ ...form, pin: event.target.value.replace(/\D/g, "") })} placeholder={c.onboarding.pinPlaceholder} /></label>
             <label>{c.onboarding.confirmPin}<input required inputMode="numeric" maxLength={6} type="password" value={form.confirmPin} onChange={(event) => setForm({ ...form, confirmPin: event.target.value.replace(/\D/g, "") })} placeholder={c.onboarding.confirmPlaceholder} /></label>
-            <label className="demo-choice"><input type="checkbox" checked={form.demo} onChange={(event) => setForm({ ...form, demo: event.target.checked })} /><span><strong>{c.onboarding.demoTitle}</strong><small>{c.onboarding.demoDescription}</small></span></label>
             {error && <p className="form-error">{error}</p>}<button className="primary-button" type="submit">{c.onboarding.enter} <ArrowUpRight size={18} /></button>
           </form>
         )}
@@ -397,16 +420,39 @@ function LanguageSwitch({ language, onChange, compact = false }: { language: Lan
   return <div className={`language-switch ${compact ? "compact" : ""}`}><button type="button" className={language === "pt" ? "active" : ""} onClick={() => onChange("pt")}>PT</button><button type="button" className={language === "en" ? "active" : ""} onClick={() => onChange("en")}>EN</button></div>;
 }
 
-function ProfilePage({ data, onSave, onLock }: { data: FinchState; onSave: (state: FinchState, message?: string) => void; onLock: () => void }) {
+function ProfilePage({ data, onSave, onLock }: { data: FinchState; onSave: (state: FinchState, message?: string) => Promise<void>; onLock: () => void }) {
   const c = copy[data.language];
   const [profile, setProfile] = useState({ name: data.profile.name, salary: String(data.profile.salary), extraIncome: String(data.profile.extraIncome), payday: data.profile.payday ? String(data.profile.payday) : "" });
   const [pin, setPin] = useState({ current: "", next: "", confirm: "" });
   const [pinError, setPinError] = useState("");
+  const [backupError, setBackupError] = useState("");
   const saveProfile = (event: FormEvent) => { event.preventDefault(); onSave({ ...data, profile: { ...data.profile, name: profile.name, salary: Number(profile.salary), extraIncome: Number(profile.extraIncome) || 0, payday: profile.payday ? Number(profile.payday) : undefined } }, c.toast.profileUpdated); };
   const changePin = async (event: FormEvent) => { event.preventDefault(); setPinError(""); if ((await hashPin(pin.current, data.profile.pinSalt)) !== data.profile.pinHash) return setPinError(c.profile.wrongPin); if (!/^\d{4,6}$/.test(pin.next)) return setPinError(c.profile.invalidPin); if (pin.next !== pin.confirm) return setPinError(c.profile.pinMismatch); const pinSalt = createSalt(); const pinHash = await hashPin(pin.next, pinSalt); onSave({ ...data, profile: { ...data.profile, pinSalt, pinHash } }, c.toast.pinUpdated); setPin({ current: "", next: "", confirm: "" }); };
-  const download = (type: "json" | "csv") => { let content: string; let mime: string; if (type === "json") { content = JSON.stringify(data, null, 2); mime = "application/json"; } else { const rows = data.language === "pt" ? [["tipo", "nome", "categoria", "valor", "detalhe"]] : [["type", "name", "category", "value", "detail"]]; rows.push(...data.expenses.map((item) => [data.language === "pt" ? "despesa" : "expense", item.name, optionLabel(data.language, item.category), String(item.amount), item.kind]), ...data.assets.map((item) => [data.language === "pt" ? "ativo" : "asset", item.ticker, optionLabel(data.language, item.category), String(item.currentPrice * item.quantity), `${item.quantity}`])); content = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n"); mime = "text/csv"; } const url = URL.createObjectURL(new Blob([content], { type: mime })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `finch-backup.${type}`; anchor.click(); URL.revokeObjectURL(url); };
+  const handleExport = async (type: "json" | "csv") => {
+    setBackupError("");
+    try {
+      await exportBackup(data, type);
+    } catch {
+      setBackupError(c.profile.importError);
+    }
+  };
+  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    if (!file) return;
+    setBackupError("");
+    try {
+      if (!window.confirm(c.profile.importConfirm)) return;
+      const imported = await importBackup(file, data);
+      await onSave(imported.state, c.toast.backupImported);
+      if (imported.fullBackup) onLock();
+    } catch {
+      setBackupError(c.profile.importError);
+    } finally {
+      event.currentTarget.value = "";
+    }
+  };
 
-  return <><PageHeading eyebrow={c.profile.eyebrow} title={c.profile.title} description={c.profile.description} /><section className="profile-grid"><article className="panel settings-card"><div className="panel-title"><div><span className="eyebrow">{c.profile.language}</span><h2>{c.profile.languageTitle}</h2></div><span className="metric-icon purple"><Languages size={19} /></span></div><p>{c.profile.languageDescription}</p><div className="language-options"><button className={data.language === "pt" ? "active" : ""} onClick={() => onSave({ ...data, language: "pt" }, pt.toast.languageUpdated)}><span>PT</span><strong>{c.profile.portuguese}</strong>{data.language === "pt" && <Check size={18} />}</button><button className={data.language === "en" ? "active" : ""} onClick={() => onSave({ ...data, language: "en" }, en.toast.languageUpdated)}><span>EN</span><strong>{c.profile.english}</strong>{data.language === "en" && <Check size={18} />}</button></div></article><form className="panel settings-card" onSubmit={saveProfile}><div className="panel-title"><div><span className="eyebrow">{c.profile.financialData}</span><h2>{c.profile.personalInfo}</h2></div><span className="metric-icon purple"><UserRound size={19} /></span></div><label>{c.profile.name}<input required value={profile.name} onChange={(event) => setProfile({ ...profile, name: event.target.value })} /></label><label>{c.profile.salary}<input required min="1" step="0.01" type="number" value={profile.salary} onChange={(event) => setProfile({ ...profile, salary: event.target.value })} /></label><label>{c.profile.extraIncome} <small>{c.common.optional}</small><input min="0" step="0.01" type="number" value={profile.extraIncome} onChange={(event) => setProfile({ ...profile, extraIncome: event.target.value })} /></label><label>{c.profile.payday} <small>{c.common.optional}</small><input min="1" max="31" type="number" value={profile.payday} onChange={(event) => setProfile({ ...profile, payday: event.target.value })} /></label><button className="primary-button compact" type="submit">{c.common.save}</button></form><form className="panel settings-card" onSubmit={changePin}><div className="panel-title"><div><span className="eyebrow">{c.profile.security}</span><h2>{c.profile.changePin}</h2></div><span className="metric-icon mint"><LockKeyhole size={19} /></span></div><label>{c.profile.currentPin}<input required inputMode="numeric" maxLength={6} type="password" value={pin.current} onChange={(event) => setPin({ ...pin, current: event.target.value.replace(/\D/g, "") })} /></label><label>{c.profile.newPin}<input required inputMode="numeric" maxLength={6} type="password" value={pin.next} onChange={(event) => setPin({ ...pin, next: event.target.value.replace(/\D/g, "") })} /></label><label>{c.profile.confirm}<input required inputMode="numeric" maxLength={6} type="password" value={pin.confirm} onChange={(event) => setPin({ ...pin, confirm: event.target.value.replace(/\D/g, "") })} /></label>{pinError && <p className="form-error">{pinError}</p>}<button className="secondary-button" type="submit">{c.profile.updatePin}</button></form><article className="panel settings-card"><div className="panel-title"><div><span className="eyebrow">{c.profile.appearance}</span><h2>{c.profile.theme}</h2></div>{data.theme === "light" ? <Sun size={21} /> : <Moon size={21} />}</div><p>{c.profile.themeDescription}</p><div className="theme-switch"><button className={data.theme === "light" ? "active" : ""} onClick={() => onSave({ ...data, theme: "light" })}><Sun size={18} /> {c.profile.light}</button><button className={data.theme === "dark" ? "active" : ""} onClick={() => onSave({ ...data, theme: "dark" })}><Moon size={18} /> {c.profile.dark}</button></div></article><article className="panel settings-card"><div className="panel-title"><div><span className="eyebrow">{c.profile.backup}</span><h2>{c.profile.export}</h2></div><span className="metric-icon amber"><Download size={19} /></span></div><p>{c.profile.exportDescription}</p><div className="export-actions"><button className="secondary-button" onClick={() => download("json")}><FileJson size={18} /> {c.profile.exportJson}</button><button className="secondary-button" onClick={() => download("csv")}><Download size={18} /> {c.profile.exportCsv}</button></div></article></section><button className="lock-action" onClick={onLock}><LogOut size={18} /> {c.profile.lock}</button></>;
+  return <><PageHeading eyebrow={c.profile.eyebrow} title={c.profile.title} description={c.profile.description} /><section className="profile-grid"><article className="panel settings-card"><div className="panel-title"><div><span className="eyebrow">{c.profile.language}</span><h2>{c.profile.languageTitle}</h2></div><span className="metric-icon purple"><Languages size={19} /></span></div><p>{c.profile.languageDescription}</p><div className="language-options"><button className={data.language === "pt" ? "active" : ""} onClick={() => onSave({ ...data, language: "pt" }, pt.toast.languageUpdated)}><span>PT</span><strong>{c.profile.portuguese}</strong>{data.language === "pt" && <Check size={18} />}</button><button className={data.language === "en" ? "active" : ""} onClick={() => onSave({ ...data, language: "en" }, en.toast.languageUpdated)}><span>EN</span><strong>{c.profile.english}</strong>{data.language === "en" && <Check size={18} />}</button></div></article><form className="panel settings-card" onSubmit={saveProfile}><div className="panel-title"><div><span className="eyebrow">{c.profile.financialData}</span><h2>{c.profile.personalInfo}</h2></div><span className="metric-icon purple"><UserRound size={19} /></span></div><label>{c.profile.name}<input required value={profile.name} onChange={(event) => setProfile({ ...profile, name: event.target.value })} /></label><label>{c.profile.salary}<input required min="1" step="0.01" type="number" value={profile.salary} onChange={(event) => setProfile({ ...profile, salary: event.target.value })} /></label><label>{c.profile.extraIncome} <small>{c.common.optional}</small><input min="0" step="0.01" type="number" value={profile.extraIncome} onChange={(event) => setProfile({ ...profile, extraIncome: event.target.value })} /></label><label>{c.profile.payday} <small>{c.common.optional}</small><input min="1" max="31" type="number" value={profile.payday} onChange={(event) => setProfile({ ...profile, payday: event.target.value })} /></label><button className="primary-button compact" type="submit">{c.common.save}</button></form><form className="panel settings-card" onSubmit={changePin}><div className="panel-title"><div><span className="eyebrow">{c.profile.security}</span><h2>{c.profile.changePin}</h2></div><span className="metric-icon mint"><LockKeyhole size={19} /></span></div><label>{c.profile.currentPin}<input required inputMode="numeric" maxLength={6} type="password" value={pin.current} onChange={(event) => setPin({ ...pin, current: event.target.value.replace(/\D/g, "") })} /></label><label>{c.profile.newPin}<input required inputMode="numeric" maxLength={6} type="password" value={pin.next} onChange={(event) => setPin({ ...pin, next: event.target.value.replace(/\D/g, "") })} /></label><label>{c.profile.confirm}<input required inputMode="numeric" maxLength={6} type="password" value={pin.confirm} onChange={(event) => setPin({ ...pin, confirm: event.target.value.replace(/\D/g, "") })} /></label>{pinError && <p className="form-error">{pinError}</p>}<button className="secondary-button" type="submit">{c.profile.updatePin}</button></form><article className="panel settings-card"><div className="panel-title"><div><span className="eyebrow">{c.profile.appearance}</span><h2>{c.profile.theme}</h2></div>{data.theme === "light" ? <Sun size={21} /> : <Moon size={21} />}</div><p>{c.profile.themeDescription}</p><div className="theme-switch"><button className={data.theme === "light" ? "active" : ""} onClick={() => onSave({ ...data, theme: "light" })}><Sun size={18} /> {c.profile.light}</button><button className={data.theme === "dark" ? "active" : ""} onClick={() => onSave({ ...data, theme: "dark" })}><Moon size={18} /> {c.profile.dark}</button></div></article><article className="panel settings-card"><div className="panel-title"><div><span className="eyebrow">{c.profile.backup}</span><h2>{c.profile.export}</h2></div><span className="metric-icon amber"><Download size={19} /></span></div><p>{c.profile.exportDescription}</p><div className="export-actions"><button type="button" className="secondary-button" onClick={() => void handleExport("json")}><FileJson size={18} /> {c.profile.exportJson}</button><button type="button" className="secondary-button" onClick={() => void handleExport("csv")}><Download size={18} /> {c.profile.exportCsv}</button><label className="secondary-button backup-file-button"><Upload size={18} /> {c.profile.importJson}<input type="file" accept="application/json,.json" onChange={(event) => void handleImport(event)} /></label><label className="secondary-button backup-file-button"><Upload size={18} /> {c.profile.importCsv}<input type="file" accept="text/csv,.csv" onChange={(event) => void handleImport(event)} /></label></div>{backupError && <p className="form-error">{backupError}</p>}</article></section><button className="lock-action" onClick={onLock}><LogOut size={18} /> {c.profile.lock}</button></>;
 }
 
 function EmptyState({ icon, title, description, action }: { icon: React.ReactNode; title: string; description: string; action?: React.ReactNode }) {
