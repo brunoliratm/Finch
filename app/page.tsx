@@ -124,6 +124,12 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      void navigator.serviceWorker.register("/sw.js");
+    }
+  }, []);
+
+  useEffect(() => {
     document.documentElement.dataset.theme = data?.theme ?? "light";
   }, [data?.theme]);
 

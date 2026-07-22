@@ -1,0 +1,10 @@
+{
+  "name": "Finch — Gestão financeira pessoal",
+  "short_name": "Finch",
+  "description": "Gestão financeira pessoal com dados e cálculos locais.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f6fa",
+  "theme_color": "#7357e8",
+  "lang": "pt-BR"
+}
