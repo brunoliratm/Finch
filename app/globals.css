@@ -637,7 +637,7 @@ select:focus-visible {
 
 .asset-row {
   display: grid;
-  grid-template-columns: auto minmax(150px, 1.4fr) repeat(3, minmax(90px, 0.8fr)) auto;
+  grid-template-columns: auto minmax(150px, 1.4fr) repeat(3, minmax(90px, 0.8fr)) auto auto;
   align-items: center;
   gap: 16px;
   padding: 15px;
@@ -659,7 +659,7 @@ select:focus-visible {
 }
 
 .asset-name,
-.asset-row > div:not(.asset-name):not(.ticker-badge),
+.asset-row > div:not(.asset-name):not(.ticker-badge):not(.row-actions),
 .expense-name {
   display: grid;
   gap: 4px;
@@ -672,7 +672,7 @@ select:focus-visible {
   font-size: 11px;
 }
 
-.asset-row > div:not(.asset-name):not(.ticker-badge) strong {
+.asset-row > div:not(.asset-name):not(.ticker-badge):not(.row-actions) strong {
   font-size: 13px;
 }
 
@@ -684,6 +684,34 @@ select:focus-visible {
   font-weight: 800;
 }
 
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.row-action {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.row-action:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.row-action.danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .expense-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
@@ -692,7 +720,7 @@ select:focus-visible {
 
 .expense-row {
   display: grid;
-  grid-template-columns: auto auto minmax(140px, 1fr) 120px 120px 75px;
+  grid-template-columns: auto auto minmax(140px, 1fr) 120px 120px 75px auto;
   align-items: center;
   gap: 13px;
   padding: 13px 5px;
@@ -1338,15 +1366,15 @@ input::placeholder {
   }
 
   .asset-row {
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto 1fr auto auto;
   }
 
-  .asset-row > div:not(.ticker-badge):not(.asset-name) {
+  .asset-row > div:not(.ticker-badge):not(.asset-name):not(.row-actions) {
     display: none;
   }
 
   .expense-row {
-    grid-template-columns: auto auto minmax(100px, 1fr) auto;
+    grid-template-columns: auto auto minmax(100px, 1fr) auto auto;
   }
 
   .expense-date,
@@ -1505,13 +1533,18 @@ input::placeholder {
   }
 
   .expense-row {
-    grid-template-columns: auto auto 1fr;
+    grid-template-columns: auto auto 1fr auto;
     gap: 9px;
   }
 
   .expense-row > strong {
     grid-column: 3;
     text-align: left;
+  }
+
+  .expense-row .row-actions {
+    grid-column: 4;
+    grid-row: 1 / span 2;
   }
 
   .expense-symbol {

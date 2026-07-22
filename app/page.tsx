@@ -18,6 +18,7 @@ import {
   LockKeyhole,
   LogOut,
   Moon,
+  Pencil,
   Plus,
   ReceiptText,
   ShieldCheck,
@@ -26,6 +27,7 @@ import {
   Target,
   TrendingDown,
   TrendingUp,
+  Trash2,
   UserRound,
   WalletCards,
   X,
@@ -45,6 +47,10 @@ import {
 import { loadLocalState, saveLocalState } from "./storage";
 
 type Tab = "dashboard" | "portfolio" | "expenses" | "profile";
+
+type EditorModal =
+  | { type: "expense"; item?: Expense }
+  | { type: "asset"; item?: Asset };
 
 type FinchState = {
   schemaVersion: 1;
@@ -111,7 +117,7 @@ export default function HomePage() {
   const [unlocked, setUnlocked] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [hideValues, setHideValues] = useState(false);
-  const [modal, setModal] = useState<"expense" | "asset" | null>(null);
+  const [modal, setModal] = useState<EditorModal | null>(null);
   const [toast, setToast] = useState("");
 
   useEffect(() => {
@@ -171,13 +177,29 @@ export default function HomePage() {
           />
         )}
         {activeTab === "portfolio" && (
-          <Portfolio data={data} metrics={portfolioMetrics} onAdd={() => setModal("asset")} />
+          <Portfolio
+            data={data}
+            metrics={portfolioMetrics}
+            onAdd={() => setModal({ type: "asset" })}
+            onEdit={(item) => setModal({ type: "asset", item })}
+            onDelete={(item) => {
+              if (window.confirm(`Remover ${item.ticker} da carteira?`)) {
+                commit({ ...data, assets: data.assets.filter((asset) => asset.id !== item.id) }, "Ativo removido");
+              }
+            }}
+          />
         )}
         {activeTab === "expenses" && (
           <Expenses
             data={data}
             metrics={expenseMetrics}
-            onAdd={() => setModal("expense")}
+            onAdd={() => setModal({ type: "expense" })}
+            onEdit={(item) => setModal({ type: "expense", item })}
+            onDelete={(item) => {
+              if (window.confirm(`Remover a despesa “${item.name}”?`)) {
+                commit({ ...data, expenses: data.expenses.filter((expense) => expense.id !== item.id) }, "Despesa removida");
+              }
+            }}
             onTogglePaid={(id) => {
               const expenses = data.expenses.map((expense) =>
                 expense.id === id ? { ...expense, paid: !expense.paid } : expense,
@@ -201,20 +223,30 @@ export default function HomePage() {
         })}
       </nav>
 
-      {modal === "expense" && (
+      {modal?.type === "expense" && (
         <ExpenseModal
+          initial={modal.item}
           onClose={() => setModal(null)}
           onSave={(expense) => {
-            commit({ ...data, expenses: [...data.expenses, expense] }, "Despesa adicionada");
+            const exists = data.expenses.some((item) => item.id === expense.id);
+            const expenses = exists
+              ? data.expenses.map((item) => item.id === expense.id ? expense : item)
+              : [...data.expenses, expense];
+            commit({ ...data, expenses }, exists ? "Despesa atualizada" : "Despesa adicionada");
             setModal(null);
           }}
         />
       )}
-      {modal === "asset" && (
+      {modal?.type === "asset" && (
         <AssetModal
+          initial={modal.item}
           onClose={() => setModal(null)}
           onSave={(asset) => {
-            commit({ ...data, assets: [...data.assets, asset] }, "Ativo adicionado");
+            const exists = data.assets.some((item) => item.id === asset.id);
+            const assets = exists
+              ? data.assets.map((item) => item.id === asset.id ? asset : item)
+              : [...data.assets, asset];
+            commit({ ...data, assets }, exists ? "Ativo atualizado" : "Ativo adicionado");
             setModal(null);
           }}
         />
@@ -407,20 +439,20 @@ function Dashboard({ data, hideValues, onToggleValues, onNavigate }: { data: Fin
   );
 }
 
-function Portfolio({ data, metrics, onAdd }: { data: FinchState; metrics: ReturnType<typeof calculatePortfolioMetrics>; onAdd: () => void }) {
+function Portfolio({ data, metrics, onAdd, onEdit, onDelete }: { data: FinchState; metrics: ReturnType<typeof calculatePortfolioMetrics>; onAdd: () => void; onEdit: (asset: Asset) => void; onDelete: (asset: Asset) => void }) {
   return (
     <>
       <PageHeading eyebrow="Seus investimentos" title="Carteira" description="Acompanhe posições, rendimentos e concentração sem depender de cotações externas." action={<button className="primary-button compact" onClick={onAdd}><Plus size={17} /> Adicionar ativo</button>} />
       <section className="stat-grid four"><StatCard label="Valor atual" value={formatBRL(metrics.current)} icon={<BriefcaseBusiness />} /><StatCard label="Total investido" value={formatBRL(metrics.invested)} icon={<CircleDollarSign />} /><StatCard label="Resultado" value={formatBRL(metrics.profit)} trend={percentage(metrics.profitability)} positive={metrics.profit >= 0} icon={<TrendingUp />} /><StatCard label="Renda anual" value={formatBRL(metrics.annualIncome)} caption="projeção cadastrada" icon={<CalendarDays />} /></section>
       <section className="panel asset-panel">
         <div className="panel-title"><div><span className="eyebrow">Posições</span><h2>Ativos cadastrados</h2></div><span className="status-pill">Atualização manual</span></div>
-        {data.assets.length ? <div className="asset-list">{data.assets.map((asset) => { const current = asset.currentPrice * asset.quantity; const invested = asset.purchasePrice * asset.quantity; const result = invested ? ((current - invested) / invested) * 100 : 0; return <article className="asset-row" key={asset.id}><div className="ticker-badge">{asset.ticker.slice(0, 2)}</div><div className="asset-name"><strong>{asset.ticker}</strong><span>{asset.name} · {asset.category}</span></div><div><small>Quantidade</small><strong>{asset.quantity}</strong></div><div><small>Preço atual</small><strong>{formatBRL(asset.currentPrice)}</strong></div><div><small>Posição</small><strong>{formatBRL(current)}</strong></div><span className={result >= 0 ? "asset-result positive" : "asset-result negative"}>{result >= 0 ? "+" : ""}{percentage(result)}</span></article>; })}</div> : <EmptyState icon={<BriefcaseBusiness />} title="Sua carteira começa aqui" description="Adicione o primeiro ativo para calcular sua rentabilidade." action={<button className="primary-button compact" onClick={onAdd}>Adicionar ativo</button>} />}
+        {data.assets.length ? <div className="asset-list">{data.assets.map((asset) => { const current = asset.currentPrice * asset.quantity; const invested = asset.purchasePrice * asset.quantity; const result = invested ? ((current - invested) / invested) * 100 : 0; return <article className="asset-row" key={asset.id}><div className="ticker-badge">{asset.ticker.slice(0, 2)}</div><div className="asset-name"><strong>{asset.ticker}</strong><span>{asset.name} · {asset.category}</span></div><div><small>Quantidade</small><strong>{asset.quantity}</strong></div><div><small>Preço atual</small><strong>{formatBRL(asset.currentPrice)}</strong></div><div><small>Posição</small><strong>{formatBRL(current)}</strong></div><span className={result >= 0 ? "asset-result positive" : "asset-result negative"}>{result >= 0 ? "+" : ""}{percentage(result)}</span><div className="row-actions"><button className="row-action" onClick={() => onEdit(asset)} aria-label={`Editar ${asset.ticker}`} title="Editar ativo"><Pencil size={16} /></button><button className="row-action danger" onClick={() => onDelete(asset)} aria-label={`Remover ${asset.ticker}`} title="Remover ativo"><Trash2 size={16} /></button></div></article>; })}</div> : <EmptyState icon={<BriefcaseBusiness />} title="Sua carteira começa aqui" description="Adicione o primeiro ativo para calcular sua rentabilidade." action={<button className="primary-button compact" onClick={onAdd}>Adicionar ativo</button>} />}
       </section>
     </>
   );
 }
 
-function Expenses({ data, metrics, onAdd, onTogglePaid }: { data: FinchState; metrics: ReturnType<typeof calculateExpenseMetrics>; onAdd: () => void; onTogglePaid: (id: string) => void }) {
+function Expenses({ data, metrics, onAdd, onTogglePaid, onEdit, onDelete }: { data: FinchState; metrics: ReturnType<typeof calculateExpenseMetrics>; onAdd: () => void; onTogglePaid: (id: string) => void; onEdit: (expense: Expense) => void; onDelete: (expense: Expense) => void }) {
   const sorted = [...data.expenses].sort((a, b) => Number(a.paid) - Number(b.paid));
   return (
     <>
@@ -429,7 +461,7 @@ function Expenses({ data, metrics, onAdd, onTogglePaid }: { data: FinchState; me
       <section className="expense-layout">
         <article className="panel expense-list-panel">
           <div className="panel-title"><div><span className="eyebrow">Neste mês</span><h2>Contas e gastos</h2></div><span className="status-pill">{data.expenses.filter((expense) => expense.paid).length}/{data.expenses.length} pagos</span></div>
-          {sorted.length ? <div className="expense-list">{sorted.map((expense) => <article className="expense-row" key={expense.id}><button className={`paid-toggle ${expense.paid ? "paid" : ""}`} onClick={() => onTogglePaid(expense.id)} aria-label={expense.paid ? "Marcar como pendente" : "Marcar como pago"}>{expense.paid && <Check size={15} />}</button><span className="expense-symbol" style={{ background: `${expenseColors[expense.category] ?? expenseColors.Outros}20`, color: expenseColors[expense.category] ?? expenseColors.Outros }}><ReceiptText size={18} /></span><div className="expense-name"><strong>{expense.name}</strong><span>{expense.category} · {expense.kind === "fixed" ? "Fixo" : "Extra"}</span></div><div className="expense-date">{expense.dueDay ? `Dia ${expense.dueDay}` : "Sem vencimento"}</div><strong>{formatBRL(expense.amount)}</strong><span className={`expense-status ${expense.paid ? "paid" : "pending"}`}>{expense.paid ? "Pago" : "Pendente"}</span></article>)}</div> : <EmptyState icon={<ReceiptText />} title="Nenhuma despesa registrada" description="Adicione seus gastos fixos e extras deste mês." />}
+          {sorted.length ? <div className="expense-list">{sorted.map((expense) => <article className="expense-row" key={expense.id}><button className={`paid-toggle ${expense.paid ? "paid" : ""}`} onClick={() => onTogglePaid(expense.id)} aria-label={expense.paid ? "Marcar como pendente" : "Marcar como pago"}>{expense.paid && <Check size={15} />}</button><span className="expense-symbol" style={{ background: `${expenseColors[expense.category] ?? expenseColors.Outros}20`, color: expenseColors[expense.category] ?? expenseColors.Outros }}><ReceiptText size={18} /></span><div className="expense-name"><strong>{expense.name}</strong><span>{expense.category} · {expense.kind === "fixed" ? "Fixo" : "Extra"}</span></div><div className="expense-date">{expense.dueDay ? `Dia ${expense.dueDay}` : "Sem vencimento"}</div><strong>{formatBRL(expense.amount)}</strong><span className={`expense-status ${expense.paid ? "paid" : "pending"}`}>{expense.paid ? "Pago" : "Pendente"}</span><div className="row-actions"><button className="row-action" onClick={() => onEdit(expense)} aria-label={`Editar ${expense.name}`} title="Editar despesa"><Pencil size={16} /></button><button className="row-action danger" onClick={() => onDelete(expense)} aria-label={`Remover ${expense.name}`} title="Remover despesa"><Trash2 size={16} /></button></div></article>)}</div> : <EmptyState icon={<ReceiptText />} title="Nenhuma despesa registrada" description="Adicione seus gastos fixos e extras deste mês." />}
         </article>
         <article className="panel budget-card"><span className="metric-icon mint"><Target size={20} /></span><span className="eyebrow">Orçamento sugerido</span><h2>Baseado na sua renda</h2><p>Uma referência simples para distribuir {formatBRL(metrics.income)} sem transformar recomendações em regras rígidas.</p><div className="budget-split"><BudgetLine label="Essenciais" value="50%" amount={metrics.income * 0.5} color="#7357e8" /><BudgetLine label="Estilo de vida" value="30%" amount={metrics.income * 0.3} color="#ffb95c" /><BudgetLine label="Reserva e metas" value="20%" amount={metrics.income * 0.2} color="#55c8a5" /></div></article>
       </section>
@@ -512,12 +544,12 @@ function ModalShell({ title, description, onClose, children }: { title: string; 
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-header"><div><span className="eyebrow">Cadastro local</span><h2 id="modal-title">{title}</h2><p>{description}</p></div><button className="icon-button" onClick={onClose} aria-label="Fechar"><X size={19} /></button></div>{children}</div></div>;
 }
 
-function ExpenseModal({ onClose, onSave }: { onClose: () => void; onSave: (expense: Expense) => void }) {
-  const [form, setForm] = useState({ name: "", category: "Moradia", amount: "", kind: "fixed" as Expense["kind"], dueDay: "", paid: false });
-  return <ModalShell title="Nova despesa" description="Registre um compromisso fixo ou gasto extra." onClose={onClose}><form className="modal-form" onSubmit={(event) => { event.preventDefault(); onSave({ ...form, id: crypto.randomUUID(), amount: Number(form.amount), dueDay: form.dueDay ? Number(form.dueDay) : undefined }); }}><label>Descrição<input autoFocus required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Ex.: Conta de energia" /></label><div className="field-row"><label>Categoria<select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>{["Moradia", "Casa", "Alimentação", "Saúde", "Lazer", "Transporte", "Outros"].map((item) => <option key={item}>{item}</option>)}</select></label><label>Valor<input required min="0.01" step="0.01" type="number" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} placeholder="R$ 0,00" /></label></div><div className="field-row"><label>Tipo<select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as Expense["kind"] })}><option value="fixed">Gasto fixo</option><option value="extra">Gasto extra</option></select></label><label>Dia do vencimento <small>Opcional</small><input min="1" max="31" type="number" value={form.dueDay} onChange={(event) => setForm({ ...form, dueDay: event.target.value })} /></label></div><label className="demo-choice"><input type="checkbox" checked={form.paid} onChange={(event) => setForm({ ...form, paid: event.target.checked })} /><span><strong>Marcar como pago</strong><small>Você poderá alterar depois.</small></span></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button compact">Adicionar despesa</button></div></form></ModalShell>;
+function ExpenseModal({ initial, onClose, onSave }: { initial?: Expense; onClose: () => void; onSave: (expense: Expense) => void }) {
+  const [form, setForm] = useState({ name: initial?.name ?? "", category: initial?.category ?? "Moradia", amount: initial ? String(initial.amount) : "", kind: initial?.kind ?? "fixed" as Expense["kind"], dueDay: initial?.dueDay ? String(initial.dueDay) : "", paid: initial?.paid ?? false });
+  return <ModalShell title={initial ? "Editar despesa" : "Nova despesa"} description="Registre um compromisso fixo ou gasto extra." onClose={onClose}><form className="modal-form" onSubmit={(event) => { event.preventDefault(); onSave({ ...form, id: initial?.id ?? crypto.randomUUID(), amount: Number(form.amount), dueDay: form.dueDay ? Number(form.dueDay) : undefined }); }}><label>Descrição<input autoFocus required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Ex.: Conta de energia" /></label><div className="field-row"><label>Categoria<select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>{["Moradia", "Casa", "Alimentação", "Saúde", "Lazer", "Transporte", "Outros"].map((item) => <option key={item}>{item}</option>)}</select></label><label>Valor<input required min="0.01" step="0.01" type="number" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} placeholder="R$ 0,00" /></label></div><div className="field-row"><label>Tipo<select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as Expense["kind"] })}><option value="fixed">Gasto fixo</option><option value="extra">Gasto extra</option></select></label><label>Dia do vencimento <small>Opcional</small><input min="1" max="31" type="number" value={form.dueDay} onChange={(event) => setForm({ ...form, dueDay: event.target.value })} /></label></div><label className="demo-choice"><input type="checkbox" checked={form.paid} onChange={(event) => setForm({ ...form, paid: event.target.checked })} /><span><strong>Marcar como pago</strong><small>Você poderá alterar depois.</small></span></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button compact">{initial ? "Salvar alterações" : "Adicionar despesa"}</button></div></form></ModalShell>;
 }
 
-function AssetModal({ onClose, onSave }: { onClose: () => void; onSave: (asset: Asset) => void }) {
-  const [form, setForm] = useState({ ticker: "", name: "", category: "Ações", quantity: "", purchasePrice: "", currentPrice: "", incomeType: "Dividendos", incomePerShare: "", frequency: "quarterly" as Frequency });
-  return <ModalShell title="Novo ativo" description="Informe os dados da sua posição e dos rendimentos." onClose={onClose}><form className="modal-form" onSubmit={(event) => { event.preventDefault(); onSave({ ...form, id: crypto.randomUUID(), ticker: form.ticker.toUpperCase(), quantity: Number(form.quantity), purchasePrice: Number(form.purchasePrice), currentPrice: Number(form.currentPrice), incomePerShare: Number(form.incomePerShare) || 0 }); }}><div className="field-row"><label>Código do ativo<input autoFocus required value={form.ticker} onChange={(event) => setForm({ ...form, ticker: event.target.value })} placeholder="Ex.: PETR4" /></label><label>Nome<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Empresa ou fundo" /></label></div><div className="field-row"><label>Categoria<select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option>Ações</option><option>FII</option><option>ETF</option><option>Renda fixa</option><option>Outro</option></select></label><label>Quantidade<input required min="0.0001" step="0.0001" type="number" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} /></label></div><div className="field-row"><label>Preço de compra<input required min="0" step="0.01" type="number" value={form.purchasePrice} onChange={(event) => setForm({ ...form, purchasePrice: event.target.value })} /></label><label>Preço atual<input required min="0" step="0.01" type="number" value={form.currentPrice} onChange={(event) => setForm({ ...form, currentPrice: event.target.value })} /></label></div><div className="field-row"><label>Forma de lucro<select value={form.incomeType} onChange={(event) => setForm({ ...form, incomeType: event.target.value })}><option>Dividendos</option><option>Juros sobre capital</option><option>Rendimentos</option><option>Outro</option></select></label><label>Valor por ação/cota <small>Opcional</small><input min="0" step="0.01" type="number" value={form.incomePerShare} onChange={(event) => setForm({ ...form, incomePerShare: event.target.value })} /></label></div><label>Periodicidade<select value={form.frequency} onChange={(event) => setForm({ ...form, frequency: event.target.value as Frequency })}><option value="monthly">Mensal</option><option value="bimonthly">Bimestral</option><option value="quarterly">Trimestral</option><option value="semiannual">Semestral</option><option value="annual">Anual</option><option value="eventual">Eventual</option></select></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button compact">Adicionar ativo</button></div></form></ModalShell>;
+function AssetModal({ initial, onClose, onSave }: { initial?: Asset; onClose: () => void; onSave: (asset: Asset) => void }) {
+  const [form, setForm] = useState({ ticker: initial?.ticker ?? "", name: initial?.name ?? "", category: initial?.category ?? "Ações", quantity: initial ? String(initial.quantity) : "", purchasePrice: initial ? String(initial.purchasePrice) : "", currentPrice: initial ? String(initial.currentPrice) : "", incomeType: initial?.incomeType ?? "Dividendos", incomePerShare: initial ? String(initial.incomePerShare) : "", frequency: initial?.frequency ?? "quarterly" as Frequency });
+  return <ModalShell title={initial ? "Editar ativo" : "Novo ativo"} description="Informe os dados da sua posição e dos rendimentos." onClose={onClose}><form className="modal-form" onSubmit={(event) => { event.preventDefault(); onSave({ ...form, id: initial?.id ?? crypto.randomUUID(), ticker: form.ticker.toUpperCase(), quantity: Number(form.quantity), purchasePrice: Number(form.purchasePrice), currentPrice: Number(form.currentPrice), incomePerShare: Number(form.incomePerShare) || 0 }); }}><div className="field-row"><label>Código do ativo<input autoFocus required value={form.ticker} onChange={(event) => setForm({ ...form, ticker: event.target.value })} placeholder="Ex.: PETR4" /></label><label>Nome<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Empresa ou fundo" /></label></div><div className="field-row"><label>Categoria<select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option>Ações</option><option>FII</option><option>ETF</option><option>Renda fixa</option><option>Outro</option></select></label><label>Quantidade<input required min="0.0001" step="0.0001" type="number" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} /></label></div><div className="field-row"><label>Preço de compra<input required min="0" step="0.01" type="number" value={form.purchasePrice} onChange={(event) => setForm({ ...form, purchasePrice: event.target.value })} /></label><label>Preço atual<input required min="0" step="0.01" type="number" value={form.currentPrice} onChange={(event) => setForm({ ...form, currentPrice: event.target.value })} /></label></div><div className="field-row"><label>Forma de lucro<select value={form.incomeType} onChange={(event) => setForm({ ...form, incomeType: event.target.value })}><option>Dividendos</option><option>Juros sobre capital</option><option>Rendimentos</option><option>Outro</option></select></label><label>Valor por ação/cota <small>Opcional</small><input min="0" step="0.01" type="number" value={form.incomePerShare} onChange={(event) => setForm({ ...form, incomePerShare: event.target.value })} /></label></div><label>Periodicidade<select value={form.frequency} onChange={(event) => setForm({ ...form, frequency: event.target.value as Frequency })}><option value="monthly">Mensal</option><option value="bimonthly">Bimestral</option><option value="quarterly">Trimestral</option><option value="semiannual">Semestral</option><option value="annual">Anual</option><option value="eventual">Eventual</option></select></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button compact">{initial ? "Salvar alterações" : "Adicionar ativo"}</button></div></form></ModalShell>;
 }
