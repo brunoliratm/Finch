@@ -35,9 +35,8 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import finchIcon from "../assets/icon.png";
-import finchSplash from "../assets/splash.png";
 import { exportBackup, importBackup } from "./backup";
 import {
   Asset,
@@ -95,12 +94,12 @@ const legacyDemoExpenseIds = ["exp-1", "exp-2", "exp-3", "exp-4", "exp-5", "exp-
 const legacyDemoAssetIds = ["asset-1", "asset-2", "asset-3"];
 
 const expenseColors: Record<string, string> = {
-  Moradia: "#7357e8",
-  Casa: "#9a84ee",
-  Alimentação: "#ffb95c",
-  Saúde: "#55c8a5",
+  Moradia: "#c16cf1",
+  Casa: "#a995ee",
+  Alimentação: "#ffb779",
+  Saúde: "#84d894",
   Lazer: "#ff8797",
-  Transporte: "#64a8f4",
+  Transporte: "#64bcea",
   Outros: "#a7a6b4",
 };
 
@@ -155,7 +154,7 @@ export default function HomePage() {
   const [hideValues, setHideValues] = useState(false);
   const [modal, setModal] = useState<EditorModal | null>(null);
   const [toast, setToast] = useState("");
-  const [splashComplete, setSplashComplete] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const lock = () => {
     sessionStorage.removeItem("finch-unlocked");
@@ -177,13 +176,13 @@ export default function HomePage() {
         }
         setUnlocked(sessionStorage.getItem("finch-unlocked") === "true");
       })
+      .catch(() => setLoadError(true))
       .finally(() => setHydrated(true));
   }, []);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSplashComplete(true), 1450);
-    return () => window.clearTimeout(timer);
-  }, []);
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [activeTab]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = data?.theme ?? "light";
@@ -193,7 +192,7 @@ export default function HomePage() {
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     void StatusBar.setStyle({ style: data?.theme === "dark" ? StatusBarStyle.Light : StatusBarStyle.Dark });
-    void StatusBar.setBackgroundColor({ color: data?.theme === "dark" ? "#0d0d0f" : "#eeedf4" });
+    void StatusBar.setBackgroundColor({ color: data?.theme === "dark" ? "#14201c" : "#e2ebe5" });
   }, [data?.theme]);
 
   useEffect(() => {
@@ -230,7 +229,8 @@ export default function HomePage() {
     return saveLocalState(next);
   };
 
-  if (!hydrated || !splashComplete) return <LoadingScreen />;
+  if (loadError) return <div className="lock-screen"><div className="lock-card" role="alert"><BrandMark large /><h1>Finch</h1><p>Não foi possível carregar seus dados locais. Tente novamente.</p><button className="primary-button" onClick={() => window.location.reload()}>Tentar novamente</button></div></div>;
+  if (!hydrated) return <LoadingScreen />;
   if (!data) return <Onboarding onComplete={(next) => { setData(next); setUnlocked(true); sessionStorage.setItem("finch-unlocked", "true"); }} />;
   if (!unlocked) return <LockScreen profile={data.profile} language={data.language} onUnlock={() => { setUnlocked(true); sessionStorage.setItem("finch-unlocked", "true"); }} />;
 
@@ -249,8 +249,8 @@ export default function HomePage() {
     <div className="app-shell">
       <Header language={language} onHome={() => setActiveTab("dashboard")} onLock={lock} />
 
-      <main className="main-content">
-        {activeTab === "dashboard" && <Dashboard data={data} hideValues={hideValues} onToggleValues={() => setHideValues((current) => !current)} onNavigate={setActiveTab} />}
+      <main className="main-content" key={activeTab}>
+        {activeTab === "dashboard" && <Dashboard data={data} hideValues={hideValues} onToggleValues={() => setHideValues((current) => !current)} onNavigate={setActiveTab} onAddExpense={() => setModal({ type: "expense" })} />}
         {activeTab === "portfolio" && (
           <Portfolio
             data={data}
@@ -287,7 +287,7 @@ export default function HomePage() {
       <nav className="mobile-navigation" aria-label={c.nav.label}>
         {navigation.map((item) => {
           const Icon = item.icon;
-          return <button key={item.id} className={activeTab === item.id ? "active" : ""} onClick={() => setActiveTab(item.id)}><Icon size={20} strokeWidth={2.2} /><span>{item.label}</span></button>;
+          return <button key={item.id} aria-current={activeTab === item.id ? "page" : undefined} className={activeTab === item.id ? "active" : ""} onClick={() => setActiveTab(item.id)}><Icon size={20} strokeWidth={2.2} /><span>{item.label}</span></button>;
         })}
       </nav>
 
@@ -308,7 +308,7 @@ function BrandMark({ large = false }: { large?: boolean }) {
 }
 
 function LoadingScreen() {
-  return <div className="loading-screen"><img className="splash-image" src={finchSplash} alt="Finch" /></div>;
+  return <div className="loading-screen" role="status" aria-label="Carregando Finch"><BrandMark large /><strong>Finch</strong><span className="loading-indicator" /></div>;
 }
 
 function Onboarding({ onComplete }: { onComplete: (state: FinchState) => void }) {
@@ -369,7 +369,7 @@ function PageHeading({ eyebrow, title, description, action }: { eyebrow: string;
   return <div className="page-heading"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>{action}</div>;
 }
 
-function Dashboard({ data, hideValues, onToggleValues, onNavigate }: { data: FinchState; hideValues: boolean; onToggleValues: () => void; onNavigate: (tab: Tab) => void }) {
+function Dashboard({ data, hideValues, onToggleValues, onNavigate, onAddExpense }: { data: FinchState; hideValues: boolean; onToggleValues: () => void; onNavigate: (tab: Tab) => void; onAddExpense: () => void }) {
   const language = data.language;
   const c = copy[language];
   const metrics = calculateExpenseMetrics(data.profile, data.expenses);
@@ -378,19 +378,19 @@ function Dashboard({ data, hideValues, onToggleValues, onNavigate }: { data: Fin
   const projection = buildProjection(data.profile, data.expenses, language);
   const display = (value: number) => hideValues ? "R$ •••••" : formatBRL(value);
   const categories = Object.entries(data.expenses.reduce<Record<string, number>>((result, expense) => ({ ...result, [expense.category]: (result[expense.category] ?? 0) + expense.amount }), {})).sort((a, b) => b[1] - a[1]);
-  const maxCategory = Math.max(...categories.map(([, value]) => value), 1);
+
   const date = new Intl.DateTimeFormat(language === "pt" ? "pt-BR" : "en-US", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
 
   return <>
-    <PageHeading eyebrow={date} title={`${c.dashboard.greeting}, ${data.profile.name.split(" ")[0]}`} description={c.dashboard.description} action={<button className="secondary-button" onClick={() => onNavigate("expenses")}><Plus size={17} /> {c.dashboard.newExpense}</button>} />
+    <PageHeading eyebrow={date} title={`${c.dashboard.greeting}, ${data.profile.name.split(" ")[0]}`} description={c.dashboard.description}  />
     <section className="dashboard-grid">
-      <article className="balance-card"><div className="balance-top"><span>{c.dashboard.balance}</span><button onClick={onToggleValues} aria-label={hideValues ? c.dashboard.showValues : c.dashboard.hideValues}>{hideValues ? <Eye size={18} /> : <EyeOff size={18} />}</button></div><strong>{display(metrics.balance)}</strong><div className="balance-change"><span className={metrics.balance >= 0 ? "positive" : "negative"}>{metrics.balance >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />} {percentage(Math.abs(metrics.savingsRate), language)}</span><span>{c.dashboard.freeIncome}</span></div><div className="balance-footer"><div><small>{c.dashboard.income}</small><b>{display(metrics.income)}</b></div><div><small>{c.dashboard.expenses}</small><b>{display(metrics.total)}</b></div></div></article>
+      <article className="balance-card"><div className="balance-top"><span>{c.dashboard.balance}</span><button onClick={onToggleValues} aria-label={hideValues ? c.dashboard.showValues : c.dashboard.hideValues}>{hideValues ? <Eye size={18} /> : <EyeOff size={18} />}</button></div><strong>{display(metrics.balance)}</strong><div className="balance-change"><span className={metrics.balance >= 0 ? "positive" : "negative"}>{metrics.balance >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />} {percentage(Math.abs(metrics.savingsRate), language)}</span><span>{c.dashboard.freeIncome}</span></div><div className="balance-footer"><div><small>{c.dashboard.income}</small><b>{display(metrics.income)}</b></div><div><small>{c.dashboard.expenses}</small><b>{display(metrics.total)}</b></div></div><div className="balance-actions"><button className="primary-button" onClick={onAddExpense}><Plus size={17} />{c.dashboard.newExpense}</button><button className="secondary-button" onClick={() => onNavigate("portfolio")}><WalletCards size={17} />{c.nav.portfolio}</button></div></article>
       <article className="kpi-card"><span className="metric-icon purple"><WalletCards size={19} /></span><small>{c.dashboard.invested}</small><strong>{display(portfolio.current)}</strong><span className={portfolio.profit >= 0 ? "metric-trend positive" : "metric-trend negative"}>{portfolio.profit >= 0 ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}{percentage(portfolio.profitability, language)}</span></article>
       <article className="kpi-card"><span className="metric-icon mint"><Target size={19} /></span><small>{c.dashboard.savingsRate}</small><strong>{percentage(metrics.savingsRate, language)}</strong><span className="metric-caption">{c.dashboard.suggestedGoal}</span></article>
       <article className="kpi-card wide"><span className="metric-icon amber"><CalendarDays size={19} /></span><small>{c.dashboard.investmentIncome}</small><strong>{display(portfolio.monthlyIncome)}</strong><span className="metric-caption">{c.dashboard.monthlyAverage}</span></article>
     </section>
     <section className="content-stack">
-      <article className="panel"><div className="panel-title"><div><span className="eyebrow">{c.dashboard.distribution}</span><h2>{c.dashboard.categories}</h2></div><button className="text-button" onClick={() => onNavigate("expenses")}>{c.dashboard.details} <ChevronRight size={16} /></button></div>{categories.length ? <div className="category-chart">{categories.map(([category, value]) => <div className="category-row" key={category}><div className="category-label"><span className="category-dot" style={{ background: expenseColors[category] ?? expenseColors.Outros }} /><span>{optionLabel(language, category)}</span><strong>{display(value)}</strong></div><div className="progress-track"><span style={{ width: `${(value / maxCategory) * 100}%`, background: expenseColors[category] ?? expenseColors.Outros }} /></div></div>)}</div> : <EmptyState icon={<ReceiptText />} title={c.dashboard.noExpenses} description={c.dashboard.noExpensesDescription} />}</article>
+      <article className="panel"><div className="panel-title"><div><span className="eyebrow">{c.dashboard.distribution}</span><h2>{c.dashboard.categories}</h2></div><button className="text-button" onClick={() => onNavigate("expenses")}>{c.dashboard.details} <ChevronRight size={16} /></button></div>{categories.length && metrics.total > 0 ? <><div className="spending-ring"><svg viewBox="0 0 240 240" aria-hidden="true"><circle cx="120" cy="120" r="98" fill="none" stroke="var(--surface-muted)" strokeWidth="14" />{categories.map(([category, value], index) => { const share = value / metrics.total; const offset = categories.slice(0, index).reduce((sum, [, amount]) => sum + amount / metrics.total * 100, 0); return <circle key={category} cx="120" cy="120" r="98" fill="none" stroke={expenseColors[category] ?? expenseColors.Outros} strokeWidth="14" strokeLinecap="round" pathLength="100" strokeDasharray={`${Math.max(share * 100 - 2.5, 0.1)} 100`} strokeDashoffset={-offset} transform="rotate(-90 120 120)" />; })}</svg><div><small>{c.dashboard.expenses}</small><strong>{display(metrics.total)}</strong><span>{c.expenses.thisMonth}</span></div></div><div className="category-chart">{categories.map(([category, value]) => <div className="category-row" key={category}><div className="category-label"><span className="category-dot" style={{ background: expenseColors[category] ?? expenseColors.Outros }} /><span>{optionLabel(language, category)}</span><strong>{percentage(value / metrics.total * 100, language)}</strong></div><strong>{display(value)}</strong></div>)}</div></> : <EmptyState icon={<ReceiptText />} title={c.dashboard.noExpenses} description={c.dashboard.noExpensesDescription} />}</article>
       <article className="panel"><div className="panel-title"><div><span className="eyebrow">{c.dashboard.forecast}</span><h2>{c.dashboard.nextMonths}</h2></div><span className="status-pill">{c.dashboard.localEstimate}</span></div><div className="projection-total"><small>{c.dashboard.estimatedBalance}</small><strong>{display(projection[11].value)}</strong></div><div className="projection-chart" aria-label={c.dashboard.nextMonths}>{projection.map((item) => { const max = Math.max(...projection.map((point) => Math.abs(point.value)), 1); return <div className="projection-column" key={item.month}><span className={item.value < 0 ? "negative-bar" : ""} style={{ height: `${Math.max(10, (Math.abs(item.value) / max) * 100)}%` }} /><small>{item.month}</small></div>; })}</div></article>
       <article className="panel insights-panel"><div className="panel-title"><div><span className="eyebrow">{c.dashboard.insights}</span><h2>{c.dashboard.recommendations}</h2></div><span className="metric-icon purple"><Lightbulb size={19} /></span></div><div className="insights-grid">{recommendations.map((item) => <div className={`insight ${item.tone}`} key={item.title}><span>{item.tone === "positive" ? <TrendingUp size={18} /> : item.tone === "attention" ? <Target size={18} /> : <Sparkles size={18} />}</span><div><strong>{item.title}</strong><p>{item.description}</p></div></div>)}</div></article>
     </section>
@@ -437,7 +437,8 @@ function ProfilePage({ data, onSave, onLock }: { data: FinchState; onSave: (stat
     }
   };
   const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
+    const input = event.currentTarget;
+    const file = input.files?.[0];
     if (!file) return;
     setBackupError("");
     try {
@@ -448,7 +449,7 @@ function ProfilePage({ data, onSave, onLock }: { data: FinchState; onSave: (stat
     } catch {
       setBackupError(c.profile.importError);
     } finally {
-      event.currentTarget.value = "";
+      input.value = "";
     }
   };
 
@@ -460,7 +461,22 @@ function EmptyState({ icon, title, description, action }: { icon: React.ReactNod
 }
 
 function ModalShell({ language, eyebrow, title, description, onClose, children }: { language: Language; eyebrow: string; title: string; description: string; onClose: () => void; children: React.ReactNode }) {
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-header"><div><span className="eyebrow">{eyebrow}</span><h2 id="modal-title">{title}</h2><p>{description}</p></div><button className="icon-button" onClick={onClose} aria-label={copy[language].common.close}><X size={19} /></button></div>{children}</div></div>;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, []);
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div className="modal" ref={dialogRef} onKeyDown={(event) => {
+    if (event.key === "Escape") { event.preventDefault(); onClose(); }
+    if (event.key !== "Tab") return;
+    const controls = dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled)');
+    if (!controls?.length) return;
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }} role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-header"><div><span className="eyebrow">{eyebrow}</span><h2 id="modal-title">{title}</h2><p>{description}</p></div><button className="icon-button" onClick={onClose} aria-label={copy[language].common.close}><X size={19} /></button></div>{children}</div></div>;
 }
 
 function ExpenseModal({ language, initial, onClose, onSave }: { language: Language; initial?: Expense; onClose: () => void; onSave: (expense: Expense) => void }) {
