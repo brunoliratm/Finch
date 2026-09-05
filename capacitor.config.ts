@@ -5,9 +5,9 @@ const config: CapacitorConfig = {
   appId: "com.finch.app",
   appName: "Finch",
   webDir: "dist",
-  backgroundColor: "#3421d8",
+  backgroundColor: "#e2ebe5",
   android: {
-    backgroundColor: "#3421d8",
+    backgroundColor: "#e2ebe5",
   },
   plugins: {
     Keyboard: {
@@ -16,9 +16,10 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchShowDuration: 350,
       launchAutoHide: true,
-      launchFadeOutDuration: 150,
-      backgroundColor: "#3421d8",
-      androidScaleType: "CENTER_CROP",
+      launchFadeOutDuration: 250,
+      backgroundColor: "#e2ebe5",
+      androidScaleType: "CENTER_INSIDE",
+      androidSplashResourceName: "finch_launch",
       showSpinner: false,
     },
     StatusBar: {

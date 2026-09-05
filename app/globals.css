@@ -42,6 +42,19 @@ html {
   background: var(--background);
 }
 
+html,
+body,
+.modal {
+  overscroll-behavior: none;
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.modal::-webkit-scrollbar {
+  display: none;
+}
+
 body {
   min-height: 100vh;
   min-height: 100dvh;
@@ -50,7 +63,6 @@ body {
   color: var(--text);
   font-family: "Urbanist", sans-serif;
   -webkit-font-smoothing: antialiased;
-  overscroll-behavior: none;
 }
 
 button,
@@ -95,19 +107,6 @@ select:focus-visible {
 .app-shell {
   position: relative;
   box-shadow: 0 0 80px rgba(31, 25, 56, 0.1);
-}
-
-.topbar {
-  position: sticky;
-  z-index: 30;
-  top: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: calc(68px + env(safe-area-inset-top));
-  padding: env(safe-area-inset-top) 18px 0;
-  border-bottom: 0;
-  background: var(--background);
 }
 
 .brand {
@@ -170,7 +169,7 @@ select:focus-visible {
 
 .main-content {
   width: 100%;
-  padding: 14px 18px 116px;
+  padding: calc(24px + env(safe-area-inset-top)) 18px 116px;
 }
 
 .main-content > * {
@@ -1201,7 +1200,6 @@ select {
   width: min(100%, 600px);
   max-height: 92vh;
   max-height: 92dvh;
-  overscroll-behavior: contain;
   overflow-y: auto;
   padding: 21px 21px max(21px, env(safe-area-inset-bottom));
   border: 1px solid var(--border);
@@ -1461,3 +1459,24 @@ select {
     transition-duration: 0.01ms !important;
   }
 }
+
+.security-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  width: min(100%, 600px);
+  margin: auto;
+  padding: max(28px, env(safe-area-inset-top)) 28px max(28px, env(safe-area-inset-bottom));
+  background: var(--background);
+  text-align: center;
+}
+.intro-brand { margin: auto 0 40px; animation: intro-arrive 600ms ease-out both; }
+.intro-brand .brand-mark { width: 84px; height: 84px; border-radius: 26px; }
+.intro-brand h1 { font-size: 44px; font-weight: 700; letter-spacing: -.045em; margin: 18px 0 8px; }
+.intro-brand p, .intro-actions p { color: var(--text-soft); line-height: 1.6; font-size: 14px; }
+.intro-actions { display: grid; justify-items: center; gap: 18px; width: 100%; min-height: 130px; }
+.intro-actions .primary-button { min-width: 180px; }
+.intro-privacy { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 36px; color: var(--text-soft); font-size: 11px; }
+@keyframes intro-arrive { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }

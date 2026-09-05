@@ -38,6 +38,7 @@ import {
 import { FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import finchIcon from "../assets/icon.png";
 import { exportBackup, importBackup } from "./backup";
+import { authenticateDevice, getDeviceSecurity, invalidateDeviceSession, revealApp } from "./device-security";
 import {
   Asset,
   buildProjection,
@@ -155,10 +156,24 @@ export default function HomePage() {
   const [modal, setModal] = useState<EditorModal | null>(null);
   const [toast, setToast] = useState("");
   const [loadError, setLoadError] = useState(false);
+  const [resumeToken, setResumeToken] = useState(0);
+  const [foreground, setForeground] = useState(true);
+  const [locking, setLocking] = useState(false);
+  const foregroundRef = useRef(true);
+  const lockingRef = useRef(false);
+  const unlock = () => { if (foregroundRef.current && !lockingRef.current) setUnlocked(true); };
 
-  const lock = () => {
-    sessionStorage.removeItem("finch-unlocked");
+  const lock = async () => {
+    // Remove private content immediately, but wait for native invalidation before mounting a fresh gate.
+    lockingRef.current = true;
+    setLocking(true);
     setUnlocked(false);
+    setModal(null);
+    try {
+      await invalidateDeviceSession();
+      setResumeToken((value) => value + 1);
+    } catch { setLoadError(true); }
+    finally { lockingRef.current = false; setLocking(false); }
   };
 
   useEffect(() => {
@@ -174,7 +189,7 @@ export default function HomePage() {
           setData(migrated);
           if (!saved.language || migrated.expenses.length !== saved.expenses.length || migrated.assets.length !== saved.assets.length) void saveLocalState(migrated);
         }
-        setUnlocked(sessionStorage.getItem("finch-unlocked") === "true");
+
       })
       .catch(() => setLoadError(true))
       .finally(() => setHydrated(true));
@@ -201,21 +216,38 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-    const listeners = Promise.all([
-      CapacitorApp.addListener("appStateChange", ({ isActive }) => {
-        if (!isActive && unlocked) lock();
-      }),
-      CapacitorApp.addListener("backButton", () => {
-        if (modal) setModal(null);
-        else if (activeTab !== "dashboard") setActiveTab("dashboard");
-        else void CapacitorApp.exitApp();
-      }),
-    ]);
-    return () => {
-      void listeners.then((handles) => handles.forEach((handle) => void handle.remove()));
+    const onStateChange = ({ isActive }: { isActive: boolean }) => {
+      foregroundRef.current = isActive;
+      setForeground(isActive);
+      if (!isActive) { setUnlocked(false); setModal(null); }
+      else setResumeToken((value) => value + 1);
     };
+    if (!Capacitor.isNativePlatform()) {
+      const onVisibility = () => onStateChange({ isActive: !document.hidden });
+      document.addEventListener("visibilitychange", onVisibility);
+      return () => document.removeEventListener("visibilitychange", onVisibility);
+    }
+    const listeners = Promise.all([
+      CapacitorApp.addListener("appStateChange", onStateChange),
+      CapacitorApp.addListener("pause", () => onStateChange({ isActive: false })),
+    ]);
+    return () => { void listeners.then((handles) => handles.forEach((handle) => void handle.remove())); };
+  }, []);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    const listener = CapacitorApp.addListener("backButton", () => {
+      if (modal) setModal(null);
+      else if (unlocked && activeTab !== "dashboard") setActiveTab("dashboard");
+      else void CapacitorApp.exitApp();
+    });
+    return () => { void listener.then((handle) => handle.remove()); };
   }, [activeTab, modal, unlocked]);
+
+  useEffect(() => {
+    // Run after React commits the locked/intro screen, never reveal stale financial content on resume.
+    if (foreground) void revealApp().catch(() => {});
+  }, [foreground, unlocked, hydrated, resumeToken]);
 
   useEffect(() => {
     if (!toast) return;
@@ -231,8 +263,8 @@ export default function HomePage() {
 
   if (loadError) return <div className="lock-screen"><div className="lock-card" role="alert"><BrandMark large /><h1>Finch</h1><p>Não foi possível carregar seus dados locais. Tente novamente.</p><button className="primary-button" onClick={() => window.location.reload()}>Tentar novamente</button></div></div>;
   if (!hydrated) return <LoadingScreen />;
-  if (!data) return <Onboarding onComplete={(next) => { setData(next); setUnlocked(true); sessionStorage.setItem("finch-unlocked", "true"); }} />;
-  if (!unlocked) return <LockScreen profile={data.profile} language={data.language} onUnlock={() => { setUnlocked(true); sessionStorage.setItem("finch-unlocked", "true"); }} />;
+  if (!data) return <Onboarding onComplete={(next) => { setData(next); setUnlocked(true); }} />;
+
 
   const language = data.language;
   const c = copy[language];
@@ -246,9 +278,8 @@ export default function HomePage() {
   ];
 
   return (
-    <div className="app-shell">
-      <Header language={language} onHome={() => setActiveTab("dashboard")} onLock={lock} />
-
+    <>
+    <div className="app-shell" hidden={!unlocked || !foreground} inert={!unlocked || !foreground}>
       <main className="main-content" key={activeTab}>
         {activeTab === "dashboard" && <Dashboard data={data} hideValues={hideValues} onToggleValues={() => setHideValues((current) => !current)} onNavigate={setActiveTab} onAddExpense={() => setModal({ type: "expense" })} />}
         {activeTab === "portfolio" && (
@@ -281,7 +312,7 @@ export default function HomePage() {
             }}
           />
         )}
-        {activeTab === "profile" && <ProfilePage data={data} onSave={commit} onLock={lock} />}
+        {activeTab === "profile" && <ProfilePage data={data} unlocked={unlocked && foreground} onSave={commit} onLock={lock} />}
       </main>
 
       <nav className="mobile-navigation" aria-label={c.nav.label}>
@@ -295,12 +326,9 @@ export default function HomePage() {
       {modal?.type === "asset" && <AssetModal language={language} initial={modal.item} onClose={() => setModal(null)} onSave={(asset) => { const exists = data.assets.some((item) => item.id === asset.id); const assets = exists ? data.assets.map((item) => item.id === asset.id ? asset : item) : [...data.assets, asset]; commit({ ...data, assets }, exists ? c.toast.assetUpdated : c.toast.assetAdded); setModal(null); }} />}
       {toast && <div className="toast"><Check size={18} /> {toast}</div>}
     </div>
+    {(!unlocked || !foreground) && <AccessGate profile={data.profile} language={data.language} foreground={foreground && !locking} resumeToken={resumeToken} onUnlock={unlock} />}
+    </>
   );
-}
-
-function Header({ language, onHome, onLock }: { language: Language; onHome: () => void; onLock: () => void }) {
-  const c = copy[language];
-  return <header className="topbar"><button className="brand" onClick={onHome} aria-label={c.nav.home}><BrandMark /><span>Finch</span></button><button className="avatar-button" onClick={onLock} aria-label={c.profile.lock}><LockKeyhole size={17} /></button></header>;
 }
 
 function BrandMark({ large = false }: { large?: boolean }) {
@@ -308,7 +336,73 @@ function BrandMark({ large = false }: { large?: boolean }) {
 }
 
 function LoadingScreen() {
-  return <div className="loading-screen" role="status" aria-label="Carregando Finch"><BrandMark large /><strong>Finch</strong><span className="loading-indicator" /></div>;
+  return <Intro language="pt"><span className="loading-indicator" role="status" aria-label="Carregando Finch" /></Intro>;
+}
+
+const securityCopy = {
+  pt: { tagline: "Seu dinheiro, com tranquilidade.", title: "Desbloquear Finch", subtitle: "Use sua digital ou a senha do dispositivo", waiting: "Confirme sua identidade para continuar.", retry: "Desbloquear", error: "Não foi possível autenticar. Tente novamente com a segurança do dispositivo.", checking: "Preparando seu acesso seguro…" },
+  en: { tagline: "Your money, with peace of mind.", title: "Unlock Finch", subtitle: "Use your fingerprint or device credential", waiting: "Confirm your identity to continue.", retry: "Unlock", error: "Authentication did not complete. Try again with device security.", checking: "Preparing your secure access…" },
+};
+
+function Intro({ language, children }: { language: Language; children: React.ReactNode }) {
+  return <div className="security-intro"><div className="intro-brand"><BrandMark large /><h1>Finch</h1><p>{securityCopy[language].tagline}</p></div><div className="intro-actions">{children}</div><small className="intro-privacy"><ShieldCheck size={16} />{copy[language].onboarding.privacy}</small></div>;
+}
+
+function AccessGate({ profile, language, foreground, resumeToken, onUnlock }: { profile: Profile; language: Language; foreground: boolean; resumeToken: number; onUnlock: () => void }) {
+  const [mode, setMode] = useState<"checking" | "device" | "pin">("checking");
+  const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const unlockRef = useRef(onUnlock);
+  unlockRef.current = onUnlock;
+  const live = useRef({ foreground, resumeToken });
+  live.current = { foreground, resumeToken };
+  const mounted = useRef(false);
+  const inFlight = useRef(false);
+  const [pinEpoch, setPinEpoch] = useState(-1);
+  const c = securityCopy[language];
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!foreground || inFlight.current || error || (mode === "pin" && pinEpoch === resumeToken)) return;
+    inFlight.current = true;
+    const open = async () => {
+      try {
+        const status = await getDeviceSecurity();
+        if (!mounted.current) return;
+        if (!status.secure) {
+          setMode("pin"); setPinEpoch(resumeToken); return;
+        }
+        setMode("device");
+        if (!status.authenticated) {
+          await new Promise((resolve) => window.setTimeout(resolve, 280));
+          if (!mounted.current || !live.current.foreground) return;
+          await authenticateDevice(c.title, c.subtitle);
+        }
+        if (mounted.current && live.current.foreground) unlockRef.current();
+      } catch {
+        // Preserve cancellation across the system credential activity's pause/resume.
+        // Only an explicit retry clears this error; never downgrade to an app PIN.
+        if (mounted.current) { setMode("device"); setError(true); }
+      } finally { inFlight.current = false; }
+    };
+    void open();
+  }, [foreground, resumeToken, attempt, c.title, c.subtitle, error, mode, pinEpoch]);
+
+  const unlockWithPin = async () => {
+    try {
+      const status = await getDeviceSecurity();
+      if (!mounted.current || !live.current.foreground || live.current.resumeToken !== resumeToken) return;
+      if (!status.secure) unlockRef.current();
+      else { setMode("checking"); setAttempt((value) => value + 1); }
+    } catch { setMode("device"); setError(true); }
+  };
+
+  if (mode === "pin" && foreground && pinEpoch === resumeToken) return <LockScreen profile={profile} language={language} onUnlock={() => void unlockWithPin()} />;
+  return <Intro language={language}><p role="status">{error ? c.error : mode === "checking" ? c.checking : c.waiting}</p>{error ? <button className="primary-button" onClick={() => { setError(false); setAttempt((value) => value + 1); }}><LockKeyhole size={18} />{c.retry}</button> : <span className="loading-indicator" />}</Intro>;
 }
 
 function Onboarding({ onComplete }: { onComplete: (state: FinchState) => void }) {
@@ -420,12 +514,13 @@ function LanguageSwitch({ language, onChange, compact = false }: { language: Lan
   return <div className={`language-switch ${compact ? "compact" : ""}`}><button type="button" className={language === "pt" ? "active" : ""} onClick={() => onChange("pt")}>PT</button><button type="button" className={language === "en" ? "active" : ""} onClick={() => onChange("en")}>EN</button></div>;
 }
 
-function ProfilePage({ data, onSave, onLock }: { data: FinchState; onSave: (state: FinchState, message?: string) => Promise<void>; onLock: () => void }) {
+function ProfilePage({ data, unlocked, onSave, onLock }: { data: FinchState; unlocked: boolean; onSave: (state: FinchState, message?: string) => Promise<void>; onLock: () => Promise<void> }) {
   const c = copy[data.language];
   const [profile, setProfile] = useState({ name: data.profile.name, salary: String(data.profile.salary), extraIncome: String(data.profile.extraIncome), payday: data.profile.payday ? String(data.profile.payday) : "" });
   const [pin, setPin] = useState({ current: "", next: "", confirm: "" });
   const [pinError, setPinError] = useState("");
   const [backupError, setBackupError] = useState("");
+  const [pendingImport, setPendingImport] = useState<File | null>(null);
   const saveProfile = (event: FormEvent) => { event.preventDefault(); onSave({ ...data, profile: { ...data.profile, name: profile.name, salary: Number(profile.salary), extraIncome: Number(profile.extraIncome) || 0, payday: profile.payday ? Number(profile.payday) : undefined } }, c.toast.profileUpdated); };
   const changePin = async (event: FormEvent) => { event.preventDefault(); setPinError(""); if ((await hashPin(pin.current, data.profile.pinSalt)) !== data.profile.pinHash) return setPinError(c.profile.wrongPin); if (!/^\d{4,6}$/.test(pin.next)) return setPinError(c.profile.invalidPin); if (pin.next !== pin.confirm) return setPinError(c.profile.pinMismatch); const pinSalt = createSalt(); const pinHash = await hashPin(pin.next, pinSalt); onSave({ ...data, profile: { ...data.profile, pinSalt, pinHash } }, c.toast.pinUpdated); setPin({ current: "", next: "", confirm: "" }); };
   const handleExport = async (type: "json" | "csv") => {
@@ -436,22 +531,27 @@ function ProfilePage({ data, onSave, onLock }: { data: FinchState; onSave: (stat
       setBackupError(c.profile.importError);
     }
   };
-  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file) return;
-    setBackupError("");
-    try {
-      if (!window.confirm(c.profile.importConfirm)) return;
-      const imported = await importBackup(file, data);
-      await onSave(imported.state, c.toast.backupImported);
-      if (imported.fullBackup) onLock();
-    } catch {
-      setBackupError(c.profile.importError);
-    } finally {
-      input.value = "";
-    }
+    if (input.files?.[0]) setPendingImport(input.files[0]);
+    input.value = "";
   };
+  useEffect(() => {
+    if (!unlocked || !pendingImport) return;
+    const file = pendingImport;
+    setPendingImport(null);
+    const restore = async () => {
+      setBackupError("");
+      try {
+        if (!window.confirm(c.profile.importConfirm)) return;
+        const imported = await importBackup(file, data);
+        await onSave(imported.state, c.toast.backupImported);
+        if (imported.fullBackup) await onLock();
+      } catch { setBackupError(c.profile.importError); }
+    };
+    void restore();
+  }, [unlocked, pendingImport, data, onSave, onLock, c]);
+
 
   return <><PageHeading eyebrow={c.profile.eyebrow} title={c.profile.title} description={c.profile.description} /><section className="profile-grid"><article className="panel settings-card"><div className="panel-title"><div><span className="eyebrow">{c.profile.language}</span><h2>{c.profile.languageTitle}</h2></div><span className="metric-icon purple"><Languages size={19} /></span></div><p>{c.profile.languageDescription}</p><div className="language-options"><button className={data.language === "pt" ? "active" : ""} onClick={() => onSave({ ...data, language: "pt" }, pt.toast.languageUpdated)}><span>PT</span><strong>{c.profile.portuguese}</strong>{data.language === "pt" && <Check size={18} />}</button><button className={data.language === "en" ? "active" : ""} onClick={() => onSave({ ...data, language: "en" }, en.toast.languageUpdated)}><span>EN</span><strong>{c.profile.english}</strong>{data.language === "en" && <Check size={18} />}</button></div></article><form className="panel settings-card" onSubmit={saveProfile}><div className="panel-title"><div><span className="eyebrow">{c.profile.financialData}</span><h2>{c.profile.personalInfo}</h2></div><span className="metric-icon purple"><UserRound size={19} /></span></div><label>{c.profile.name}<input required value={profile.name} onChange={(event) => setProfile({ ...profile, name: event.target.value })} /></label><label>{c.profile.salary}<input required min="1" step="0.01" type="number" value={profile.salary} onChange={(event) => setProfile({ ...profile, salary: event.target.value })} /></label><label>{c.profile.extraIncome} <small>{c.common.optional}</small><input min="0" step="0.01" type="number" value={profile.extraIncome} onChange={(event) => setProfile({ ...profile, extraIncome: event.target.value })} /></label><label>{c.profile.payday} <small>{c.common.optional}</small><input min="1" max="31" type="number" value={profile.payday} onChange={(event) => setProfile({ ...profile, payday: event.target.value })} /></label><button className="primary-button compact" type="submit">{c.common.save}</button></form><form className="panel settings-card" onSubmit={changePin}><div className="panel-title"><div><span className="eyebrow">{c.profile.security}</span><h2>{c.profile.changePin}</h2></div><span className="metric-icon mint"><LockKeyhole size={19} /></span></div><label>{c.profile.currentPin}<input required inputMode="numeric" maxLength={6} type="password" value={pin.current} onChange={(event) => setPin({ ...pin, current: event.target.value.replace(/\D/g, "") })} /></label><label>{c.profile.newPin}<input required inputMode="numeric" maxLength={6} type="password" value={pin.next} onChange={(event) => setPin({ ...pin, next: event.target.value.replace(/\D/g, "") })} /></label><label>{c.profile.confirm}<input required inputMode="numeric" maxLength={6} type="password" value={pin.confirm} onChange={(event) => setPin({ ...pin, confirm: event.target.value.replace(/\D/g, "") })} /></label>{pinError && <p className="form-error">{pinError}</p>}<button className="secondary-button" type="submit">{c.profile.updatePin}</button></form><article className="panel settings-card"><div className="panel-title"><div><span className="eyebrow">{c.profile.appearance}</span><h2>{c.profile.theme}</h2></div>{data.theme === "light" ? <Sun size={21} /> : <Moon size={21} />}</div><p>{c.profile.themeDescription}</p><div className="theme-switch"><button className={data.theme === "light" ? "active" : ""} onClick={() => onSave({ ...data, theme: "light" })}><Sun size={18} /> {c.profile.light}</button><button className={data.theme === "dark" ? "active" : ""} onClick={() => onSave({ ...data, theme: "dark" })}><Moon size={18} /> {c.profile.dark}</button></div></article><article className="panel settings-card"><div className="panel-title"><div><span className="eyebrow">{c.profile.backup}</span><h2>{c.profile.export}</h2></div><span className="metric-icon amber"><Download size={19} /></span></div><p>{c.profile.exportDescription}</p><div className="export-actions"><button type="button" className="secondary-button" onClick={() => void handleExport("json")}><FileJson size={18} /> {c.profile.exportJson}</button><button type="button" className="secondary-button" onClick={() => void handleExport("csv")}><Download size={18} /> {c.profile.exportCsv}</button><label className="secondary-button backup-file-button"><Upload size={18} /> {c.profile.importJson}<input type="file" accept="application/json,.json" onChange={(event) => void handleImport(event)} /></label><label className="secondary-button backup-file-button"><Upload size={18} /> {c.profile.importCsv}<input type="file" accept="text/csv,.csv" onChange={(event) => void handleImport(event)} /></label></div>{backupError && <p className="form-error">{backupError}</p>}</article></section><button className="lock-action" onClick={onLock}><LogOut size={18} /> {c.profile.lock}</button></>;
 }

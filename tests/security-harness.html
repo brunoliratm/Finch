@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Finch security test harness</title></head>
+<body><div id="root"></div>
+<script type="module">
+// Development-only harness: mock the native bridge and IndexedDB in memory.
+// No real device authentication or user storage is accessed.
+const listeners = new Map();
+let listenerId = 0;
+const qa = window.qa = {
+  secure: true, authenticated: false, requests: 0, pending: null,
+  emit(eventName, value) { for (const entry of listeners.values()) if (entry.eventName === eventName) entry.callback(value); },
+  background() { qa.authenticated = false; qa.emit('pause', {}); qa.emit('appStateChange', { isActive: false }); },
+  resume() { qa.emit('appStateChange', { isActive: true }); },
+  succeed() { qa.authenticated = true; qa.pending?.resolve(); qa.pending = null; },
+  cancel() { qa.pending?.reject(new Error('User cancelled')); qa.pending = null; },
+};
+let data = {
+  schemaVersion: 1, theme: 'light', language: 'pt', expenses: [], assets: [],
+  profile: { name: 'Teste', salary: 3000, extraIncome: 0, pinSalt: 'qa', pinHash: Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('qa:1234')))).map(x => x.toString(16).padStart(2,'0')).join('') }
+};
+window.indexedDB.open = () => {
+  const request = { result: {
+    close() {},
+    transaction() {
+      const tx = { objectStore() { return {
+        get() { const get = { result: structuredClone(data) }; setTimeout(() => { get.onsuccess?.(); tx.oncomplete?.(); }, 0); return get; },
+        put(value) { data = structuredClone(value); setTimeout(() => tx.oncomplete?.(), 0); }
+      }; } };
+      return tx;
+    }
+  } };
+  setTimeout(() => request.onsuccess?.(), 0);
+  return request;
+};
+window.androidBridge = {};
+window.Capacitor = {
+  PluginHeaders: [
+    { name: 'DeviceSecurity', methods: ['getStatus','authenticate','showContent','invalidateSession'].map(name => ({ name, rtype:'promise' })) },
+    { name: 'App', methods: [{name:'addListener',rtype:'callback'},{name:'removeListener',rtype:'promise'},{name:'exitApp',rtype:'promise'}] },
+    { name:'StatusBar',methods:['setStyle','setBackgroundColor'].map(name=>({name,rtype:'promise'})) },
+    { name:'Keyboard',methods:[{name:'setResizeMode',rtype:'promise'}] }
+  ],
+  nativeCallback(plugin, method, options, callback) {
+    const id = String(++listenerId); listeners.set(id, { ...options, callback }); return id;
+  },
+  nativePromise(plugin, method, options) {
+    if (method === 'removeListener') { listeners.delete(options.callbackId); return Promise.resolve(); }
+    if (plugin === 'DeviceSecurity') {
+      if (method === 'getStatus') return Promise.resolve({secure:qa.secure,authenticated:qa.authenticated});
+      if (method === 'invalidateSession') { qa.authenticated=false; return Promise.resolve(); }
+      if (method === 'authenticate') {
+        qa.requests++;
+        return new Promise((resolve,reject) => { qa.pending={resolve,reject}; });
+      }
+    }
+    return Promise.resolve();
+  }
+};
+await import('/app/main.tsx');
+</script>
+</body>
+</html>
